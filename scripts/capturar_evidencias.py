@@ -1,0 +1,58 @@
+"""Gera as capturas de tela de evidência (docs/evidencias/*.png).
+
+Pré-requisitos: API em http://localhost:8000 e front-end em http://localhost:5173
+rodando sobre o banco do simulador.
+    pip install playwright && python -m playwright install chromium
+    python scripts/capturar_evidencias.py
+"""
+import sys
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+
+URL = "http://localhost:5173"
+PASTA = Path(__file__).resolve().parent.parent / "docs" / "evidencias"
+PASTA.mkdir(parents=True, exist_ok=True)
+
+PAGINAS = [
+    ("01-painel-gestor", "#/painel", "Decisões pendentes"),
+    ("02-faturas", "#/faturas", "Total rateado"),
+    ("03-area-morador", "#/morador", "Recargas do mês"),
+    ("05-regras-rateio", "#/regras", "Salvar regras"),
+]
+
+
+def main(largura: int = 1440) -> None:
+    with sync_playwright() as p:
+        nav = p.chromium.launch()
+        pagina = nav.new_page(viewport={"width": largura, "height": 900}, device_scale_factor=1)
+
+        for nome, rota, texto in PAGINAS:
+            pagina.goto(f"{URL}/{rota}")
+            pagina.get_by_text(texto).first.wait_for()
+            pagina.wait_for_timeout(1200)  # gráficos terminam de desenhar
+            pagina.screenshot(path=PASTA / f"{nome}.png", full_page=True)
+            print("ok", nome)
+
+        # simulação ao vivo: recarga com cabo defeituoso, avaliada pela IA
+        pagina.goto(f"{URL}/#/simular")
+        pagina.get_by_label("Situação").select_option("cabo")
+        pagina.get_by_label("Cartão RFID").select_option("RFID-A0811-01")
+        pagina.get_by_role("button", name="Iniciar recarga").click()
+        pagina.get_by_text("Sessão encerrada e avaliada pela IA").wait_for(timeout=60000)
+        pagina.wait_for_timeout(500)
+        pagina.screenshot(path=PASTA / "04-simular-recarga.png", full_page=True)
+        print("ok 04-simular-recarga")
+
+        # versão celular do painel do morador
+        celular = nav.new_page(viewport={"width": 390, "height": 844}, device_scale_factor=2)
+        celular.goto(f"{URL}/#/morador")
+        celular.get_by_text("Recargas do mês").first.wait_for()
+        celular.wait_for_timeout(800)
+        celular.screenshot(path=PASTA / "06-area-morador-celular.png", full_page=True)
+        print("ok 06-area-morador-celular")
+        nav.close()
+
+
+if __name__ == "__main__":
+    main(*(int(a) for a in sys.argv[1:]))

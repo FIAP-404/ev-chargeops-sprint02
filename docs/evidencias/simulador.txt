@@ -1,0 +1,10 @@
+Simulando de 06/04/2026 até 13/10/2026 15:00 (seed=42)...
+  2026-04: faturas geradas | IA retreinada: anomalias=False demanda=False
+  2026-05: faturas geradas | IA retreinada: anomalias=False demanda=True
+  2026-06: faturas geradas | IA retreinada: anomalias=True demanda=True
+  2026-07: faturas geradas | IA retreinada: anomalias=True demanda=True
+  2026-08: faturas geradas | IA retreinada: anomalias=True demanda=True
+  2026-09: faturas geradas | IA retreinada: anomalias=True demanda=True
+Concluído: {'sessoes': 197, 'tentativas_ocupado': 82, 'anomalias_injetadas': 11, 'por_tipo': {'falha_carregador': 2, 'salto_medidor': 2, 'sem_carregar': 2, 'cabo_defeituoso': 3, 'pico_potencia': 1, 'cartao_desconhecido': 1}}
+Modelo de anomalias: {'treinado': True, 'sessoes': 184, 'fracao_outliers_treino': 0.2337}
+Modelo de demanda: {'treinado': True, 'semanas_historico': 27, 'semanas_backtest': 4, 'mae_por_hora_modelo': 0.1348, 'mae_por_hora_baseline': 0.126, 'erro_semanal_medio_pct_modelo': 34.3, 'erro_semanal_medio_pct_baseline': 48.8, 'crescimento_semanal_pct': 2.76}

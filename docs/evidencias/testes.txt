@@ -1,0 +1,33 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.16, pytest-9.1.1, pluggy-1.6.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: backend
+configfile: pytest.ini
+plugins: anyio-4.15.1
+collecting ... collected 23 items
+
+tests/test_api.py::test_fluxo_completo_pela_api PASSED                   [  4%]
+tests/test_api.py::test_validacao_de_entrada PASSED                      [  8%]
+tests/test_api.py::test_painel_do_usuario_e_dashboard PASSED             [ 13%]
+tests/test_fluxo_sessao.py::test_sessao_identificada_normal_vai_para_rateio PASSED [ 17%]
+tests/test_fluxo_sessao.py::test_rfid_desconhecido_vai_para_quarentena_e_gera_alerta PASSED [ 21%]
+tests/test_fluxo_sessao.py::test_gestor_atribui_sessao_da_quarentena PASSED [ 26%]
+tests/test_fluxo_sessao.py::test_carregador_ocupado_recusa_e_registra_demanda PASSED [ 30%]
+tests/test_fluxo_sessao.py::test_ociosidade_calculada_a_partir_da_carga_completa PASSED [ 34%]
+tests/test_fluxo_sessao.py::test_falha_de_comunicacao_usa_ultima_leitura_valida PASSED [ 39%]
+tests/test_fluxo_sessao.py::test_ia_retem_kwh_acima_da_bateria PASSED    [ 43%]
+tests/test_fluxo_sessao.py::test_ociosidade_longa_avisa_mas_nao_retem PASSED [ 47%]
+tests/test_fluxo_sessao.py::test_sessao_retida_nao_entra_na_fatura_ate_revisao PASSED [ 52%]
+tests/test_fluxo_sessao.py::test_fatura_do_exemplo_sprint01_via_fluxo_completo PASSED [ 56%]
+tests/test_rateio.py::test_exemplo_da_sprint01_unidade_1204 PASSED       [ 60%]
+tests/test_rateio.py::test_unidade_sem_uso_nao_paga_taxa_por_padrao PASSED [ 65%]
+tests/test_rateio.py::test_unidade_sem_uso_paga_taxa_se_regra_aprovar PASSED [ 69%]
+tests/test_rateio.py::test_ociosidade_cobra_so_o_que_passa_da_tolerancia PASSED [ 73%]
+tests/test_rateio.py::test_ociosidade_desativada_nao_cobra PASSED        [ 78%]
+tests/test_rateio.py::test_credito_por_falha_desconta_mas_nao_fica_negativo PASSED [ 82%]
+tests/test_rateio.py::test_dois_veiculos_da_mesma_unidade_sao_consolidados PASSED [ 86%]
+tests/test_rateio.py::test_memoria_de_calculo_explica_cada_parcela PASSED [ 91%]
+tests/test_sems.py::test_encontra_o_carregador_entre_os_equipamentos PASSED [ 95%]
+tests/test_sems.py::test_normaliza_watts_para_kw_e_traduz_status PASSED  [100%]
+
+============================== 23 passed in 1.08s ==============================
