@@ -3,8 +3,8 @@ import { num, pct } from "../formatos";
 import { StatusCapacidade } from "./Status";
 
 const DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
-// rampa sequencial de um só tom (azul), do claro ao escuro
-const RAMPA = ["#eef3f8", "#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+// previsão da IA = violeta (linhas de dados das ilustrações da GoodWe); rampa de um só tom, do claro ao escuro
+const RAMPA = ["#f3f2fb", "#dddbf6", "#c3c0f0", "#a29de7", "#7f79dc", "#5b57d1", "#433fae", "#2c2a80"];
 
 function corDaCelula(valor, maximo) {
   if (valor < 0.02) return RAMPA[0];
@@ -32,7 +32,7 @@ export function MapaDeCalor({ grade }) {
                 role="cell"
                 tabIndex={0}
                 className="celula"
-                style={{ background: corDaCelula(v, maximo), outline: foco?.d === d && foco?.h === h ? "2px solid #16202b" : undefined }}
+                style={{ background: corDaCelula(v, maximo), outline: foco?.d === d && foco?.h === h ? "2px solid #1a1a1a" : undefined }}
                 aria-label={`${DIAS[d]} ${h}h: ${num(v, 2)} chegadas previstas`}
                 onMouseEnter={() => setFoco({ d, h, v })}
                 onFocus={() => setFoco({ d, h, v })}

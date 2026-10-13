@@ -33,12 +33,18 @@ export default function App() {
     <div className="app">
       <aside className="lateral">
         <div className="marca">
-          <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
-            <rect width="32" height="32" rx="7" fill="#fff" />
-            <path d="M18 4 9 18h6l-2 10 10-15h-6z" fill="#0F4C5C" />
+          <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true">
+            <defs>
+              <linearGradient id="marca-gradiente" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#ee3b2e" />
+                <stop offset="100%" stopColor="#d7000f" />
+              </linearGradient>
+            </defs>
+            <rect width="32" height="32" rx="10" fill="url(#marca-gradiente)" />
+            <path d="M18 4 9 18h6l-2 10 10-15h-6z" fill="#fff" />
           </svg>
           <div>
-            <strong>EV ChargeOps</strong>
+            <strong><em>EV</em> ChargeOps</strong>
             <span>Residencial simulado</span>
           </div>
         </div>

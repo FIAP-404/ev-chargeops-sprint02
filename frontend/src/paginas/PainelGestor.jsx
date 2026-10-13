@@ -83,7 +83,7 @@ export default function PainelGestor() {
               <>
                 <FaixasCriticas faixas={previsao.dados.faixas} horizonte={previsao.dados.horizonte_semanas} />
                 <p className="mudo" style={{ marginTop: 14 }}>
-                  Barra azul: próxima semana. Traço preto: daqui a {previsao.dados.horizonte_semanas} semanas. Linha
+                  Barra violeta: próxima semana. Traço preto: daqui a {previsao.dados.horizonte_semanas} semanas. Linha
                   tracejada: limite de 1 carregador. A procura cresce cerca de{" "}
                   {num(previsao.dados.metricas_modelo.crescimento_semanal_pct)}% por semana.
                 </p>
