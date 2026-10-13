@@ -83,7 +83,7 @@ button, input, select { font: inherit; color: inherit; }
 /* ---------- estrutura ---------- */
 .app {
   display: grid;
-  grid-template-columns: 248px 1fr;
+  grid-template-columns: 248px minmax(0, 1fr);
   min-height: 100vh;
   /* a faixa da lateral continua até o fim de páginas longas */
   background: linear-gradient(to right, var(--papel) 248px, var(--fundo) 248px);
@@ -148,7 +148,7 @@ button, input, select { font: inherit; color: inherit; }
 
 .grade { display: grid; gap: 20px; }
 .grade-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.grade-3-2 { grid-template-columns: 3fr 2fr; }
+.grade-3-2 { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
 .grade.topo { align-items: start; }
 .pilha { display: flex; flex-direction: column; gap: 20px; }
 
@@ -349,11 +349,11 @@ tr.selecionada td:first-child { box-shadow: inset 3px 0 0 var(--marca); }
   .indicadores { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .indicador:nth-child(4) { border-left: 0; }
   .indicador:nth-child(n + 4) { border-top: 1px solid var(--linha); }
-  .grade-2, .grade-3-2 { grid-template-columns: 1fr; }
+  .grade-2, .grade-3-2 { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; background: var(--fundo); }
+  .app { grid-template-columns: minmax(0, 1fr); background: var(--fundo); }
   .lateral { position: static; height: auto; padding: 16px; gap: 14px; border-right: 0; border-bottom: 1px solid var(--linha); }
   .nav { flex-direction: row; flex-wrap: wrap; }
   .carregador-status { margin-top: 0; }
