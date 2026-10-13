@@ -99,7 +99,9 @@ TIPOS_ANOMALIA = [
 
 
 class Simulador:
-    def __init__(self, db, rng: random.Random, inicio: datetime, ate: datetime, fator_demanda: float = 0.65):
+    def __init__(self, db, rng: random.Random, inicio: datetime, ate: datetime, fator_demanda: float = 0.65,
+                 taxa_anomalias: float = 0.07):
+        self.taxa_anomalias = taxa_anomalias  # chance de uma anomalia por dia
         self.db = db
         self.fator_demanda = fator_demanda  # multiplica a frequência de todos os perfis
         self.rng = rng
@@ -108,6 +110,7 @@ class Simulador:
         self.medidor = 1520.0  # leitura acumulada do medidor do carregador (kWh)
         self.livre_em = inicio
         self.stats = {"sessoes": 0, "tentativas_ocupado": 0, "anomalias_injetadas": 0}
+        self.gabarito: list[dict] = []  # anomalias injetadas (para avaliar a IA no notebook)
         # Roteiro de demonstração: ocorrências fixas nos últimos dias, para que
         # o mês corrente sempre tenha pendências para o gestor analisar.
         perfil = {p.rfid: p for p in PERFIS}
@@ -131,7 +134,7 @@ class Simulador:
                 hora = min(max(self.rng.gauss(p.hora_media, p.desvio_hora), 6.0), 23.3)
                 chegadas.append((dia + timedelta(minutes=round(hora * 60)), p, None))
         # anomalias raras
-        if self.rng.random() < 0.07:
+        if self.rng.random() < self.taxa_anomalias:
             tipo = self.rng.choice(TIPOS_ANOMALIA)
             perfil = self.rng.choice([p for p in PERFIS if semana >= p.semana_inicio])
             hora = self.rng.uniform(8, 22)
@@ -187,6 +190,8 @@ class Simulador:
             horas_carga = rng.uniform(1.5, 3.0)
 
         sessao = iniciar_sessao(self.db, CARREGADOR_ID, rfid, inicio, self.medidor)
+        if anomalia:
+            self.gabarito.append({"sessao_id": sessao.id, "tipo": anomalia, "inicio_em": inicio.isoformat()})
         t, energia, fim_carga = inicio, 0.0, inicio + timedelta(minutes=max(round(horas_carga * 60), 1))
         salto_feito = False
         while t + INTERVALO_TELEMETRIA < fim_carga:
@@ -306,6 +311,10 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--fator-demanda", type=float, default=0.65,
                         help="escala a frequência de uso de todos os moradores (padrão: 0.65)")
+    parser.add_argument("--taxa-anomalias", type=float, default=0.07,
+                        help="probabilidade de uma anomalia injetada por dia (padrão: 0.07)")
+    parser.add_argument("--sem-roteiro", action="store_true",
+                        help="não injeta o roteiro fixo de demonstração nos últimos dias")
     args = parser.parse_args()
 
     ate = datetime.fromisoformat(args.ate) if args.ate else datetime.now().replace(second=0, microsecond=0)
@@ -326,12 +335,23 @@ def main() -> None:
     popular_cadastro(db)
 
     print(f"Simulando de {inicio:%d/%m/%Y} até {ate:%d/%m/%Y %H:%M} (seed={args.seed})...")
-    sim = Simulador(db, random.Random(args.seed), inicio, ate, args.fator_demanda)
+    sim = Simulador(db, random.Random(args.seed), inicio, ate, args.fator_demanda, args.taxa_anomalias)
+    if args.sem_roteiro:
+        sim.roteiro = {}
     sim.rodar()
 
     # fim da simulação: treina com tudo e gera os alertas de capacidade
     info = ia.treinar_modelos(db, ate)
     ia.atualizar_alertas_capacidade(db, ate)
+    # gabarito das anomalias injetadas: usado no notebook para medir a IA
+    import csv
+
+    from app.database import PASTA_DADOS
+
+    with open(PASTA_DADOS / "anomalias_injetadas.csv", "w", newline="", encoding="utf-8") as arq:
+        escritor = csv.DictWriter(arq, fieldnames=["sessao_id", "tipo", "inicio_em"])
+        escritor.writeheader()
+        escritor.writerows(sim.gabarito)
     print(f"Concluído: {sim.stats}")
     print(f"Modelo de anomalias: {info['anomalias']}")
     print(f"Modelo de demanda: {info['demanda']}")
