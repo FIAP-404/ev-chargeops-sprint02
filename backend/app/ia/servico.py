@@ -170,7 +170,7 @@ def alerta_da_avaliacao(sessao: m.SessaoRecarga, av: Avaliacao, quando: datetime
 # Treino dos modelos
 # --------------------------------------------------------------------------
 def base_sessoes(db: Session) -> pd.DataFrame:
-    """Histórico usado no treino: sessões já liberadas/faturadas, com veículo identificado."""
+    """Histórico usado no treino: sessões liberadas/faturadas, com veículo identificado e sem alerta da IA."""
     sessoes = db.scalars(
         select(m.SessaoRecarga).where(
             m.SessaoRecarga.status_cobranca.in_(STATUS_HISTORICO),
@@ -180,6 +180,11 @@ def base_sessoes(db: Session) -> pd.DataFrame:
     carregadores = {c.id: c for c in db.scalars(select(m.Carregador))}
     linhas = []
     for s in sessoes:
+        # Sessões que a IA já apontou (média/alta) não entram como exemplo de
+        # "normal", mesmo que o gestor tenha liberado a cobrança. Sem isso, cada
+        # cabo com defeito liberado ensinaria o modelo que aquele padrão é normal.
+        if any(mo["severidade"] in ("media", "alta") for mo in motivos_da_sessao(s)):
+            continue
         feats = features_da_sessao(
             s.duracao_min, s.kwh_entregue, s.potencia_media_kw, s.potencia_max_kw, s.minutos_ociosos,
             potencia_esperada(s.veiculo, carregadores[s.carregador_id]), s.veiculo.capacidade_bateria_kwh,
@@ -329,18 +334,17 @@ def projecao_kwh_mes(db: Session, unidade_id: int, mes: str, hoje: date) -> dict
             m.SessaoRecarga.status_cobranca.in_(STATUS_HISTORICO),
         )
     ).all()
-    dias = pd.date_range(inicio_janela, hoje, freq="D").date
-    serie = pd.Series(0.0, index=dias)
-    for inicio, kwh in linhas:
-        serie[inicio.date()] += kwh
+    media_8_semanas = sum(kwh for _, kwh in linhas) / ((hoje - inicio_janela).days + 1)
+    kwh_no_mes = sum(kwh for inicio, kwh in linhas if inicio.strftime("%Y-%m") == mes)
 
-    dias_restantes = [hoje + timedelta(days=i) for i in range(1, (ultimo_dia - hoje).days + 1)]
-    if hoje.strftime("%Y-%m") != mes:
-        dias_restantes = []  # mês já fechado
+    mes_aberto = hoje.strftime("%Y-%m") == mes
+    dias_restantes = (ultimo_dia - hoje).days if mes_aberto else 0
+    restante = projetar_kwh_restante(media_8_semanas, kwh_no_mes, hoje.day, ultimo_dia.day, dias_restantes)
     return {
-        "kwh_previsto_restante": round(projetar_kwh_restante(serie, dias_restantes), 2),
-        "dias_restantes": len(dias_restantes),
-        "media_diaria_8_semanas": round(float(serie.mean()), 2) if len(serie) else 0.0,
+        "kwh_previsto_restante": round(restante, 2),
+        "dias_restantes": dias_restantes,
+        "media_diaria_8_semanas": round(media_8_semanas, 2),
+        "ritmo_diario_do_mes": round(kwh_no_mes / hoje.day, 2) if mes_aberto else None,
     }
 
 

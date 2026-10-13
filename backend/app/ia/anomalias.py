@@ -26,26 +26,23 @@ from sklearn.ensemble import IsolationForest
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-# As variáveis são relativas ao veículo sempre que possível: 3 kW é normal
-# para um híbrido plug-in, mas é sinal de problema num carro que carrega a 7 kW.
+# O modelo olha a QUALIDADE elétrica da recarga, sempre em relação ao veículo:
+# 3 kW é normal para um híbrido plug-in, mas é defeito num carro que carrega a 7 kW.
+# Ficaram de fora, depois de testar (ver notebook e README):
+# - tempo ocioso: já tem regra e taxa próprias e dominava o modelo;
+# - tamanho da sessão (kWh, horas): recargas curtas são legítimas e viravam alarme falso.
 FEATURES = [
-    "duracao_h",
-    "kwh",
     "fracao_bateria",  # kWh entregues / capacidade da bateria
     "razao_potencia",  # potência média / potência esperada para o veículo
-    "potencia_max_kw",
-    "ociosas_h",
-    "fracao_ociosa",
+    "razao_pico",  # potência máxima / potência esperada
+    "media_sobre_pico",  # potência média / potência máxima (curva de carga "achatada" ou com picos)
 ]
 
 NOMES_FEATURES = {
-    "duracao_h": ("duração", "h"),
-    "kwh": ("energia", "kWh"),
     "fracao_bateria": ("fração da bateria carregada", ""),
     "razao_potencia": ("potência média / esperada", ""),
-    "potencia_max_kw": ("potência máxima", "kW"),
-    "ociosas_h": ("tempo ocioso", "h"),
-    "fracao_ociosa": ("fração do tempo ociosa", ""),
+    "razao_pico": ("potência máxima / esperada", ""),
+    "media_sobre_pico": ("potência média / máxima", ""),
 }
 
 MIN_SESSOES_TREINO = 40  # abaixo disso o modelo não é confiável -> só regras
@@ -64,10 +61,13 @@ def features_da_sessao(duracao_min: float, kwh: float, potencia_media_kw: float,
     ociosas_h = minutos_ociosos / 60
     return {
         "duracao_h": duracao_h,
+        "horas_carregando": max(duracao_h - ociosas_h, 1 / 60),
         "kwh": kwh,
         "potencia_media_kw": potencia_media_kw,
         "fracao_bateria": kwh / bateria_kwh if bateria_kwh else 0.0,
         "razao_potencia": min(potencia_media_kw / potencia_esperada_kw, 3.0) if potencia_esperada_kw else 1.0,
+        "razao_pico": min(potencia_max_kw / potencia_esperada_kw, 3.0) if potencia_esperada_kw else 1.0,
+        "media_sobre_pico": min(potencia_media_kw / max(potencia_max_kw, 0.01), 3.0),
         "potencia_max_kw": potencia_max_kw,
         "ociosas_h": ociosas_h,
         "fracao_ociosa": min(ociosas_h / duracao_h, 1.0),
