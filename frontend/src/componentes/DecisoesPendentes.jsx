@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
-import { dataHora, duracao, kwh, num } from "../formatos";
+import { brl, dataHora, duracao, kwh, num } from "../formatos";
+import CampoReais from "./CampoReais";
 import { StatusCobranca } from "./Status";
 
 const ORIGEM = { regra: "Regra de negócio", modelo: "Modelo (Isolation Forest)" };
@@ -29,12 +30,12 @@ export default function DecisoesPendentes({ sessoes, moradores, alertas, aoDecid
 }
 
 function Decisao({ sessao: s, moradores, acao, aoDecidir }) {
-  const [credito, setCredito] = useState("");
+  const [credito, setCredito] = useState(0); // centavos
   const [morador, setMorador] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState(null);
   const semDono = s.status_cobranca === "quarentena";
-  const comCredito = Number(credito.replace(",", ".")) > 0;
+  const comCredito = credito > 0;
 
   async function decidir(decisao) {
     setEnviando(true);
@@ -45,7 +46,7 @@ function Decisao({ sessao: s, moradores, acao, aoDecidir }) {
         corpo: {
           decisao,
           usuario_id: semDono && morador ? Number(morador) : null,
-          ajuste_valor: Number(credito.replace(",", ".")) || 0,
+          ajuste_valor: credito / 100,
           observacao: decisao === "liberar" ? (comCredito ? "crédito concedido pelo gestor" : "conferida pelo gestor") : "não cobrada",
         },
       });
@@ -108,14 +109,13 @@ function Decisao({ sessao: s, moradores, acao, aoDecidir }) {
         ) : (
           <label className="campo">
             Crédito ao morador (opcional)
-            <input
-              placeholder="R$ 0,00"
-              inputMode="decimal"
-              value={credito}
-              onChange={(e) => setCredito(e.target.value)}
+            <CampoReais
+              centavos={credito}
+              aoMudar={setCredito}
+              maximo={Math.round(s.valor_sessao * 100)}
               aria-describedby={`ajuda-${s.id}`}
             />
-            <span className="ajuda" id={`ajuda-${s.id}`}>Descontado da fatura do mês.</span>
+            <span className="ajuda" id={`ajuda-${s.id}`}>Até {brl(s.valor_sessao)}, o valor da sessão.</span>
           </label>
         )}
         <button

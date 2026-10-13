@@ -239,6 +239,21 @@ button, input, select { font: inherit; color: inherit; }
 }
 .campo input:hover, .campo select:hover, select.seletor:hover { border-color: var(--tinta-3); }
 .campo .ajuda { color: var(--tinta-3); font-size: 0.76rem; font-weight: 400; }
+
+/* campo em reais: o "R$" é um prefixo fixo; borda e foco ficam no contorno */
+.campo-reais {
+  display: flex;
+  align-items: center;
+  height: var(--altura-controle);
+  border: 1px solid var(--linha-forte);
+  border-radius: var(--raio-pequeno);
+  background: #fff;
+}
+.campo-reais:hover { border-color: var(--tinta-3); }
+.campo-reais:focus-within { outline: 2px solid var(--marca); outline-offset: 2px; }
+.campo-reais .prefixo { padding-left: 12px; color: var(--tinta-3); font-size: 0.9rem; font-weight: 600; }
+.campo .campo-reais input { flex: 1; height: 100%; border: 0; background: transparent; padding: 0 12px 0 6px; }
+.campo .campo-reais input:focus-visible { outline: none; }
 .linha-controles { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 input[type="checkbox"] { accent-color: var(--marca); }
 
