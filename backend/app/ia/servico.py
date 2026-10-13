@@ -325,7 +325,8 @@ def projecao_kwh_mes(db: Session, unidade_id: int, mes: str, hoje: date) -> dict
             m.SessaoRecarga.unidade_id == unidade_id,
             m.SessaoRecarga.inicio_em >= datetime.combine(inicio_janela, datetime.min.time()),
             m.SessaoRecarga.inicio_em < datetime.combine(hoje + timedelta(days=1), datetime.min.time()),
-            m.SessaoRecarga.status_cobranca != m.COBRANCA_DESCARTADA,
+            # sessões retidas pela IA não entram na média (podem ser erro de medição)
+            m.SessaoRecarga.status_cobranca.in_(STATUS_HISTORICO),
         )
     ).all()
     dias = pd.date_range(inicio_janela, hoje, freq="D").date

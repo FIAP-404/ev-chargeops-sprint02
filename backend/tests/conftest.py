@@ -9,6 +9,7 @@ os.environ["EVCO_DB_URL"] = f"sqlite:///{_PASTA}/teste.db"
 import pytest  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
+from sqlalchemy.pool import StaticPool  # noqa: E402
 
 from app.database import Base  # noqa: E402
 from app.ia import servico as ia  # noqa: E402
@@ -20,7 +21,8 @@ def db():
     """Banco em memória novo para cada teste, já com o cadastro base."""
     from app import models  # noqa: F401
 
-    engine = create_engine("sqlite:///:memory:")
+    # StaticPool + check_same_thread=False: o TestClient da API roda em outra thread
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
     sessao = sessionmaker(bind=engine, expire_on_commit=False)()
     popular_cadastro(sessao)
