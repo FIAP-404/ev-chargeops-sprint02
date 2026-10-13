@@ -150,7 +150,7 @@ def painel_usuario(usuario_id: int, mes: str | None = None, db: Session = Depend
             **prev,
             "kwh_projetado_mes": round(float(r.kwh_total), 2),
             "valor_projetado_mes": float(r.valor_total),
-            "metodo": "média de consumo da unidade por dia da semana nas últimas 8 semanas",
+            "metodo": "ritmo do mês combinado com a média das últimas 8 semanas",
         }
 
     faturas = db.scalars(

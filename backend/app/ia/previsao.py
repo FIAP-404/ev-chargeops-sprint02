@@ -14,9 +14,11 @@ Duas previsões, ambas com modelos interpretáveis (como decidido na Sprint 01:
    responder "em quantas semanas a demanda das terças à noite passa da
    capacidade do carregador?".
 
-2. Projeção da fatura do mês (para o morador): kWh já consumido + média de
-   consumo da unidade por dia da semana nas últimas 8 semanas, aplicada aos
-   dias que faltam no mês.
+2. Projeção da fatura do mês (para o morador): kWh já consumido + estimativa
+   para os dias que faltam. A estimativa diária mistura o ritmo do mês atual
+   com a média das últimas 8 semanas, dando mais peso ao mês atual quanto mais
+   dias dele já passaram. No backtest (notebook) essa mistura errou menos que
+   usar só o histórico ou só a regra de três.
 """
 from datetime import date, datetime, timedelta
 
@@ -174,9 +176,15 @@ def analisar_capacidade(previsao: pd.DataFrame, duracao_media_h: float, n_carreg
     return sorted(resultado, key=lambda r: -r["ocupacao_fim_horizonte"])
 
 
-def projetar_kwh_restante(kwh_por_dia: pd.Series, dias_restantes: list[date]) -> float:
-    """kwh_por_dia: consumo diário da unidade (índice = data, zeros incluídos)."""
-    if kwh_por_dia.empty or not dias_restantes:
+def projetar_kwh_restante(media_diaria_8_semanas: float, kwh_no_mes: float, dias_decorridos: int,
+                          dias_no_mes: int, dias_restantes: int) -> float:
+    """kWh esperados até o fim do mês.
+
+    peso = fração do mês que já passou (dia 5 de 30 -> 0,17; dia 25 -> 0,83)
+    consumo diário esperado = peso × ritmo do mês + (1 - peso) × média das 8 semanas
+    """
+    if dias_restantes <= 0 or dias_decorridos <= 0:
         return 0.0
-    media_por_dia_semana = kwh_por_dia.groupby(pd.to_datetime(kwh_por_dia.index).weekday).mean()
-    return float(sum(media_por_dia_semana.get(d.weekday(), 0.0) for d in dias_restantes))
+    peso = dias_decorridos / dias_no_mes
+    ritmo_do_mes = kwh_no_mes / dias_decorridos
+    return dias_restantes * (peso * ritmo_do_mes + (1 - peso) * media_diaria_8_semanas)
