@@ -4,7 +4,11 @@ import { brl, dataHora, duracao, kwh, num } from "../formatos";
 import CampoReais from "./CampoReais";
 import { StatusCobranca } from "./Status";
 
-const ORIGEM = { regra: "Regra de negócio", modelo: "Modelo (Isolation Forest)" };
+// selo curto na tela; o nome técnico fica na dica (title) para quem quiser
+const ORIGEM = {
+  regra: { selo: "Regra", detalhe: "Regra de negócio" },
+  modelo: { selo: "IA", detalhe: "Modelo de anomalias (Isolation Forest)" },
+};
 
 /**
  * Sessões que a IA reteve ou que estão sem identificação. Nada aqui entra na
@@ -75,7 +79,8 @@ function Decisao({ sessao: s, moradores, acao, aoDecidir }) {
           <ul className="motivos">
             {s.motivos_ia.map((m) => (
               <li key={m.codigo} className={m.severidade}>
-                {m.descricao} <span className="origem">({ORIGEM[m.origem]})</span>
+                {m.descricao}{" "}
+                <span className={`origem ${m.origem}`} title={ORIGEM[m.origem].detalhe}>{ORIGEM[m.origem].selo}</span>
               </li>
             ))}
           </ul>

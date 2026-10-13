@@ -300,7 +300,20 @@ tr.selecionada td:first-child { box-shadow: inset 3px 0 0 var(--marca); }
 .motivos li.alta { border-color: var(--critico); }
 .motivos li.media { border-color: var(--serio); }
 .motivos li.baixa { border-color: var(--atencao); }
-.motivos .origem { color: var(--tinta-3); font-size: 0.76rem; }
+/* selo de origem do motivo: "Regra" neutro, "IA" no violeta das previsões */
+.motivos .origem {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: var(--pilula);
+  background: #ededed;
+  color: var(--tinta-2);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.6;
+  vertical-align: 1px;
+  cursor: help;
+}
+.motivos .origem.modelo { background: var(--previsao-clara); color: var(--previsao-escura); }
 .acoes { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
 .acoes .campo + .botao { margin-top: 2px; }
 /* sugestão da IA: violeta, a cor das previsões */

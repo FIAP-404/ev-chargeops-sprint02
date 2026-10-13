@@ -38,11 +38,12 @@ FEATURES = [
     "media_sobre_pico",  # potência média / potência máxima (curva de carga "achatada" ou com picos)
 ]
 
+# como cada variável aparece para o gestor; {valor} é um percentual
 NOMES_FEATURES = {
-    "fracao_bateria": ("fração da bateria carregada", ""),
-    "razao_potencia": ("potência média / esperada", ""),
-    "razao_pico": ("potência máxima / esperada", ""),
-    "media_sobre_pico": ("potência média / máxima", ""),
+    "fracao_bateria": "carregou {valor} da bateria",
+    "razao_potencia": "potência média em {valor} do esperado",
+    "razao_pico": "potência máxima em {valor} do esperado",
+    "media_sobre_pico": "potência média em {valor} da máxima atingida",
 }
 
 MIN_SESSOES_TREINO = 40  # abaixo disso o modelo não é confiável -> só regras
@@ -139,12 +140,8 @@ class DetectorAnomalias:
         for nome in z.index[:2]:
             if z[nome] < 1.5:
                 break
-            rotulo, unidade = NOMES_FEATURES[nome]
-            casas = 1 if unidade else 2
-            sufixo = f" {unidade}" if unidade else ""
-            desvios.append(
-                f"{rotulo} {br(X.iloc[0][nome], casas)}{sufixo}, típico {br(self.media[nome], casas)}{sufixo}"
-            )
+            texto = NOMES_FEATURES[nome].format(valor=f"{X.iloc[0][nome]:.0%}")
+            desvios.append(f"{texto} (normal: {self.media[nome]:.0%})")
         return ResultadoModelo(percentil=round(percentil, 4), outlier=outlier, desvios=desvios)
 
     def salvar(self, caminho: Path) -> None:
