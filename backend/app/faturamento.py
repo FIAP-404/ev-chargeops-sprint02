@@ -44,6 +44,17 @@ def parametros_calculo(p: m.ParametrosRateio) -> ParametrosCalculo:
     )
 
 
+def valor_da_sessao(db: Session, sessao: m.SessaoRecarga) -> float:
+    """Quanto a sessão soma à fatura antes de créditos: energia + perdas + ociosidade.
+
+    Usa o mesmo motor de rateio da fatura. A taxa de infraestrutura fica de fora
+    porque é mensal e por unidade, não da sessão. É o teto do crédito do gestor.
+    """
+    base = SessaoRateio(sessao_id=sessao.id, kwh=sessao.kwh_entregue or 0.0, minutos_ociosos=sessao.minutos_ociosos or 0.0)
+    r = calcular_rateio([base], parametros_calculo(obter_parametros(db)))
+    return float(r.valor_total - r.valor_infra)
+
+
 def _sessoes_da_unidade(db: Session, unidade_id: int, mes: str, status: tuple[str, ...]) -> list[m.SessaoRecarga]:
     inicio, fim = limites_do_mes(mes)
     return list(

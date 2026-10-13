@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app import models as m
-from app.faturamento import gerar_faturas
+from app.faturamento import gerar_faturas, valor_da_sessao
 from app.seed import CARREGADOR_ID
 from app.sessoes import ErroSessao, encerrar_sessao, iniciar_sessao, registrar_telemetria, revisar_sessao
 
@@ -108,6 +108,19 @@ def test_sessao_retida_nao_entra_na_fatura_ate_revisao(db):
     assert f.kwh_total == pytest.approx(58.6)
     assert f.sessoes_pendentes == 0
     assert normal.status_cobranca == m.COBRANCA_FATURADA
+
+
+def test_credito_limitado_ao_valor_da_sessao(db):
+    # 40 kWh × R$ 0,95 = R$ 38,00 + 5% de perdas = R$ 39,90 (sem ociosidade; taxa mensal fica de fora)
+    s = recarga(db, "RFID-A1204-02", 40, horas_carga=6)
+    assert valor_da_sessao(db, s) == pytest.approx(39.90)
+    with pytest.raises(ErroSessao, match="valor da sessão"):
+        revisar_sessao(db, s.id, "liberar", ajuste_valor=39.91)
+    assert s.status_cobranca == m.COBRANCA_REVISAO_IA
+
+    revisar_sessao(db, s.id, "liberar", ajuste_valor=39.90, observacao="crédito integral")
+    assert s.status_cobranca == m.COBRANCA_LIBERADA
+    assert s.ajuste_valor == pytest.approx(39.90)
 
 
 def test_fatura_do_exemplo_sprint01_via_fluxo_completo(db):

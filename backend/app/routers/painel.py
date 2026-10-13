@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app.database import get_db
-from app.faturamento import calcular_unidade, limites_do_mes, obter_parametros, parametros_calculo
+from app.faturamento import calcular_unidade, limites_do_mes, obter_parametros, parametros_calculo, valor_da_sessao
 from app.ia import servico as ia
 from app.rateio import SessaoRateio, calcular_rateio
 from app.serializacao import fatura_dict, sessao_dict
@@ -88,7 +88,8 @@ def resumo(mes: str | None = None, db: Session = Depends(get_db)):
             {"data": d, "kwh": round(v["kwh"], 2), "sessoes": v["sessoes"]} for d, v in sorted(diario.items())
         ],
         "chegadas_por_hora": [{"hora": h, "chegadas": c} for h, c in enumerate(chegadas_hora)],
-        "sessoes_retidas": [sessao_dict(s) for s in retidas],
+        # valor_sessao: teto do crédito que o gestor pode conceder na decisão
+        "sessoes_retidas": [{**sessao_dict(s), "valor_sessao": valor_da_sessao(db, s)} for s in retidas],
     }
 
 

@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app.faturamento import valor_da_sessao
 from app.ia import servico as ia
 from app.ia.anomalias import br
 
@@ -271,6 +272,9 @@ def revisar_sessao(
         raise ErroSessao("ajuste_valor é um crédito e deve ser >= 0")
 
     if decisao == "liberar":
+        teto = valor_da_sessao(db, sessao)
+        if ajuste_valor > teto:
+            raise ErroSessao(f"O crédito não pode passar do valor da sessão (R$ {teto:.2f})".replace(".", ","))
         if sessao.usuario_id is None:
             if usuario_id is None:
                 raise ErroSessao("Informe usuario_id para atribuir a sessão sem identificação")
