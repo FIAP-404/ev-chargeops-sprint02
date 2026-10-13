@@ -100,7 +100,10 @@ function Decisao({ sessao: s, moradores, acao, aoDecidir }) {
                 <option key={m.id} value={m.id}>{m.unidade}, {m.nome}</option>
               ))}
             </select>
-            {!morador && <span className="ajuda" id={`ajuda-${s.id}`}>Necessário para liberar a cobrança.</span>}
+            {/* a linha fica sempre reservada (só some da vista) para o layout não pular */}
+            <span className="ajuda" id={`ajuda-${s.id}`} style={{ visibility: morador ? "hidden" : undefined }}>
+              Necessário para liberar a cobrança.
+            </span>
           </label>
         ) : (
           <label className="campo">
@@ -110,7 +113,9 @@ function Decisao({ sessao: s, moradores, acao, aoDecidir }) {
               inputMode="decimal"
               value={credito}
               onChange={(e) => setCredito(e.target.value)}
+              aria-describedby={`ajuda-${s.id}`}
             />
+            <span className="ajuda" id={`ajuda-${s.id}`}>Descontado da fatura do mês.</span>
           </label>
         )}
         <button
