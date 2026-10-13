@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# banco e modelos gerados localmente (recriados pelo simulador)
+backend/data/*.db
+backend/data/*.joblib
+
+node_modules/
+frontend/dist/
+.env
