@@ -157,6 +157,23 @@ class EventoSessao(Base):
     sessao: Mapped[SessaoRecarga] = relationship(back_populates="eventos")
 
 
+class TentativaOcupado(Base):
+    """Usuário passou o RFID mas o carregador já estava em uso.
+
+    Não estava no esquema da Sprint 01. Foi adicionada porque, com um único
+    carregador, as sessões registradas escondem a demanda reprimida: quem chega
+    e encontra a vaga ocupada não gera sessão. A previsão de demanda usa
+    sessões + tentativas para medir a procura real.
+    """
+
+    __tablename__ = "tentativas_ocupado"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    carregador_id: Mapped[str] = mapped_column(ForeignKey("carregadores.id"))
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
 class ParametrosRateio(Base):
     """Regras de rateio aprovadas pelo gestor/condomínio (linha única, id=1)."""
 

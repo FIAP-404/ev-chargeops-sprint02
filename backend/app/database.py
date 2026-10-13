@@ -11,8 +11,9 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-PASTA_DADOS = Path(__file__).resolve().parent.parent / "data"
-PASTA_DADOS.mkdir(exist_ok=True)
+# pasta onde ficam o banco SQLite e os modelos de IA treinados (.joblib)
+PASTA_DADOS = Path(os.getenv("EVCO_DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
+PASTA_DADOS.mkdir(parents=True, exist_ok=True)
 
 DB_URL = os.getenv("EVCO_DB_URL", f"sqlite:///{PASTA_DADOS / 'evchargeops.db'}")
 
