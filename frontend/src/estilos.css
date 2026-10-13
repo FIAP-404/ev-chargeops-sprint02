@@ -134,7 +134,9 @@ button, input, select { font: inherit; color: inherit; }
 .luz { width: 10px; height: 10px; border-radius: 50%; background: #2fb350; box-shadow: 0 0 0 3px rgba(47, 179, 80, 0.2); }
 .luz.em-uso { background: #f5a524; box-shadow: 0 0 0 3px rgba(245, 165, 36, 0.22); }
 
-.conteudo { padding: 36px 44px 64px; max-width: 1300px; width: 100%; }
+/* conteúdo com largura máxima e centralizado: em telas largas a sobra vira
+   margem dos dois lados, como no container do site da GoodWe */
+.conteudo { padding: 36px 44px 64px; max-width: 1440px; width: 100%; margin-inline: auto; }
 
 .cabecalho { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; }
 .cabecalho p { color: var(--tinta-3); margin-top: 8px; max-width: 70ch; }
