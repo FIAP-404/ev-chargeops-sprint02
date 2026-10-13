@@ -40,8 +40,10 @@ Sugestão de estudo: rode o projeto (README, seção 2), abra `http://localhost:
 - `src/api.js`: `api()` faz o `fetch` e transforma erro HTTP em exceção; `useApi()` é um hook que busca e guarda `{dados, erro, carregando}`.
 - `src/App.jsx`: navegação por hash (`#/faturas`), sem biblioteca de rotas; status do carregador atualizado a cada 10 s.
 - `componentes/FaturaExplicavel.jsx`: desenha a memória de cálculo que veio do back-end. O front **não recalcula** a fatura.
-- `componentes/DecisoesPendentes.jsx`: as ações do gestor (liberar, liberar com crédito, não cobrar, atribuir morador).
-- `componentes/PrevisaoCapacidade.jsx`: mapa de calor (rampa de um só tom de azul) e barras de ocupação.
+- `componentes/DecisoesPendentes.jsx`: as ações do gestor. Um único botão primário (liberar), com o crédito como campo opcional e limitado ao valor da sessão (`valor_sessao`, calculado no back-end); "Não cobrar" é a saída de baixa ênfase; na quarentena, o gestor atribui o morador antes de liberar.
+- `componentes/CampoReais.jsx`: campo de dinheiro no padrão dos apps bancários. Só aceita dígitos, os centavos entram pela direita e o valor fica em centavos inteiros.
+- `componentes/PrevisaoCapacidade.jsx`: mapa de calor (rampa de um só tom de violeta, a cor das previsões) e barras de ocupação.
+- `src/estilos.css`: tokens da identidade visual (vermelho da marca para ação e energia, violeta para a IA) e as regras do sistema de botões, documentadas no topo da seção de controles.
 
 ## 4. Conceitos de IA que a banca pode pedir
 

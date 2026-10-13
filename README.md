@@ -72,7 +72,7 @@ O Vite repassa as chamadas `/api/*` para `http://localhost:8000`. Se a API estiv
 
 ```bash
 cd backend
-python -m pytest -v                # 23 testes: rateio, fluxo de sessão, API e SEMS
+python -m pytest -v                # 24 testes: rateio, fluxo de sessão, API e SEMS
 
 cd ..
 pip install nbformat nbclient ipykernel matplotlib
@@ -144,7 +144,7 @@ flowchart LR
 | Telemetria | `POST /sessoes/{id}/telemetria` | Grava potência, leitura do medidor e status. Leitura que "anda para trás" é ignorada e vira evento de erro. `carga_completa` marca o início da ociosidade. |
 | Encerramento | `POST /sessoes/{id}/encerrar` | kWh = leitura final − inicial. Sem leitura final (falha de comunicação), usa o último dado válido. Calcula duração, ociosidade, potência média e status final. |
 | Decisão de cobrança | automática | Sem identificação: `quarentena`. Identificada: a IA avalia e devolve `liberada` ou `revisao_ia`. |
-| Revisão do gestor | `POST /sessoes/{id}/revisao` | Liberar (com crédito opcional e, na quarentena, atribuindo um morador) ou não cobrar. |
+| Revisão do gestor | `POST /sessoes/{id}/revisao` | Liberar (com crédito opcional, limitado ao valor da sessão, e, na quarentena, atribuindo um morador) ou não cobrar. |
 | Fechamento do mês | `POST /faturas/gerar?mes=AAAA-MM` | Gera a fatura de todas as unidades com as sessões liberadas. As pendentes ficam de fora e são contadas na fatura. |
 
 Outras rotas: `GET /sessoes`, `GET /faturas`, `GET/PUT /parametros`, `GET /dashboard/resumo`, `GET /dashboard/historico-mensal`, `GET /usuarios/{id}/painel`, `GET /ia/status`, `POST /ia/treinar`, `GET /ia/previsao-capacidade`, `GET /ia/alertas`. Todas estão documentadas em `http://localhost:8000/docs`.
@@ -164,6 +164,7 @@ Valor da unidade no mês =
 
 - Dinheiro é calculado com `Decimal` e cada parcela é arredondada em centavos (`ROUND_HALF_UP`). Assim 1,995 vira 2,00, como no exemplo da Sprint 01.
 - O total nunca fica negativo, mesmo com crédito maior que o valor.
+- O crédito que o gestor concede numa sessão tem teto: o valor da própria sessão (energia + perdas + ociosidade, sem a taxa mensal de infraestrutura), calculado pelo mesmo motor de rateio. A API recusa crédito acima disso (`test_fluxo_sessao.py`).
 - Cada fatura grava a **memória de cálculo**: o texto de cada parcela ("42 kWh × R$ 0,95/kWh"). É isso que a tela mostra ao morador.
 
 ### 4.2 Regras de exceção (Sprint 01, seção 5.4)
@@ -251,7 +252,10 @@ As capturas são geradas por `scripts/capturar_evidencias.py`, que usa Playwrigh
 - **Variáveis da IA escolhidas por teste.** A primeira versão do Isolation Forest usava duração, kWh e tempo ocioso. Na avaliação, a ociosidade dominava o modelo (12 alarmes falsos) e recargas curtas legítimas viravam alarme. A versão final usa razões relativas ao veículo. O histórico de commits mostra essa evolução.
 - **Sessões já apontadas pela IA não treinam o modelo**, mesmo que o gestor libere a cobrança. Sem isso, cada cabo defeituoso liberado ensinava ao modelo que aquele padrão é normal.
 - **Tentativas com carregador ocupado viram dado.** Com um único carregador, só as sessões esconderiam a demanda reprimida, e a previsão de capacidade ficaria cega para a fila.
-- **Fonte servida pelo próprio app** (`@fontsource-variable/archivo`), para funcionar sem internet.
+- **Identidade visual inspirada na GoodWe.** Um único vermelho de marca, usado só em ações, item ativo e energia; neutros sem matiz; botões em pílula com o gradiente coral → vermelho. Os gráficos seguem a convenção das ilustrações da GoodWe: vermelho para energia medida e violeta para previsões da IA. O status crítico é vinho, para não competir com o vermelho de ação.
+- **Botões com regras de design system** (Material 3, Carbon, Polaris), documentadas em `estilos.css`: no máximo um primário por grupo, altura única de 40 px, desabilitado neutro e sempre explicado.
+- **Campo de dinheiro no padrão dos apps bancários.** Só aceita dígitos e os centavos entram pela direita (1124 → R$ 11,24); o valor é guardado em centavos inteiros.
+- **Fonte servida pelo próprio app** (`@fontsource-variable/montserrat`), para funcionar sem internet.
 
 ## 8. Desvios em relação à Sprint 01 e justificativas
 
@@ -296,10 +300,10 @@ backend/
       servico.py        integração da IA com o fluxo
     integracoes/sems.py adaptador GoodWe SEMS (não validado)
   simulador/            gerador de 6 meses de uso
-  tests/                23 testes (pytest)
+  tests/                24 testes (pytest)
 frontend/
   src/paginas/          telas (gestor, faturas, morador, simulação, regras)
-  src/componentes/      fatura explicável, gráficos, mapa de calor, decisões
+  src/componentes/      fatura explicável, gráficos, mapa de calor, decisões, campo em reais
 notebooks/
   avaliacao_ia.ipynb    avaliação executada do rateio e da IA
 docs/
