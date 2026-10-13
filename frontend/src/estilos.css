@@ -44,6 +44,10 @@
   --critico: #9f1239;
   --critico-fundo: #fbe4ea;
 
+  --desabilitado-fundo: #ededed;
+  --desabilitado-texto: #a3a3a3;
+
+  --altura-controle: 40px;
   --raio-pequeno: 10px;
   --raio: 16px;
   --pilula: 999px;
@@ -172,37 +176,69 @@ button, input, select { font: inherit; color: inherit; }
 .indicador.destaque { box-shadow: inset 0 3px 0 var(--marca); }
 .indicador.destaque .valor { color: var(--marca); }
 
-/* ---------- controles ---------- */
+/* ---------- controles ----------
+   Sistema de botões (regras de Material 3, Carbon, Polaris e Atlassian):
+   1. Três níveis de ênfase, no máximo UM primário por grupo de ações:
+        .botao (primário)      → a ação recomendada
+        .botao.secundario      → alternativa válida
+        .botao.perigo          → ação com consequência, em ênfase mínima (ghost)
+   2. Uma altura para todo controle (botão, campo, seletor): 40px.
+   3. Mesma forma, mesma tipografia e mesma borda (1px, transparente quando não
+      há contorno) em todas as variantes, para os rótulos alinharem.
+   4. Desabilitado é sempre neutro e igual em todas as variantes; nunca uma
+      versão desbotada da cor. Ocupado (aria-busy) é outro estado. */
 .botao {
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: var(--altura-controle);
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: var(--pilula);
   background: var(--gradiente);
   color: #fff;
-  border-radius: var(--pilula);
-  padding: 8px 20px;
+  font-size: 0.9rem;
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 6px 14px -8px rgba(230, 0, 18, 0.7);
-  transition: background 0.15s, box-shadow 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .botao:hover { background: var(--gradiente-hover); }
-.botao:disabled { opacity: 0.5; cursor: progress; box-shadow: none; }
-.botao.secundario { background: #fff; color: var(--tinta); border: 1px solid var(--linha-forte); padding: 7px 19px; box-shadow: none; }
+.botao:active { background: var(--marca-escura); }
+
+.botao.secundario { background: var(--papel); color: var(--tinta); border-color: var(--linha-forte); }
 .botao.secundario:hover { background: var(--suave); border-color: var(--tinta-3); }
-.botao.perigo { background: #fff; color: var(--critico); border: 1px solid #e8b9c6; padding: 7px 19px; box-shadow: none; }
+.botao.secundario:active { background: var(--linha); }
+
+.botao.perigo { background: transparent; color: var(--critico); }
 .botao.perigo:hover { background: var(--critico-fundo); }
+.botao.perigo:active { background: #f6ccd7; }
+
+.botao:disabled,
+.botao:disabled:hover {
+  background: var(--desabilitado-fundo);
+  border-color: transparent;
+  color: var(--desabilitado-texto);
+  cursor: not-allowed;
+}
+.botao.perigo:disabled { background: transparent; }
+.botao[aria-busy="true"] { cursor: progress; }
 
 .campo { display: flex; flex-direction: column; gap: 4px; font-size: 0.83rem; color: var(--tinta-2); font-weight: 500; }
 .campo input, .campo select, select.seletor {
+  height: var(--altura-controle);
   border: 1px solid var(--linha-forte);
   border-radius: var(--raio-pequeno);
-  padding: 8px 12px;
+  padding: 0 12px;
   background: #fff;
   color: var(--tinta);
   min-width: 0;
+  font-size: 0.9rem;
   font-weight: 500;
 }
 .campo input:hover, .campo select:hover, select.seletor:hover { border-color: var(--tinta-3); }
+.campo .ajuda { color: var(--tinta-3); font-size: 0.76rem; font-weight: 400; }
 .linha-controles { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 input[type="checkbox"] { accent-color: var(--marca); }
 
@@ -237,7 +273,8 @@ tr.selecionada td:first-child { box-shadow: inset 3px 0 0 var(--marca); }
 .selo.critico { background: var(--critico-fundo); color: var(--critico); }
 
 /* ---------- decisões pendentes ---------- */
-.decisao { border-top: 1px solid var(--linha); padding: 18px 0; display: grid; grid-template-columns: 1fr auto; gap: 8px 20px; }
+/* coluna de ações com largura fixa: os botões ficam iguais em todas as decisões */
+.decisao { border-top: 1px solid var(--linha); padding: 18px 0; display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 8px 24px; }
 .decisao:first-of-type { border-top: 0; padding-top: 4px; }
 .decisao .quem { font-weight: 650; }
 .decisao .detalhe { color: var(--tinta-2); font-size: 0.84rem; }
@@ -247,9 +284,8 @@ tr.selecionada td:first-child { box-shadow: inset 3px 0 0 var(--marca); }
 .motivos li.media { border-color: var(--serio); }
 .motivos li.baixa { border-color: var(--atencao); }
 .motivos .origem { color: var(--tinta-3); font-size: 0.76rem; }
-.acoes { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 200px; }
-.acoes .credito { display: flex; gap: 6px; }
-.acoes .credito input { width: 84px; border: 1px solid var(--linha-forte); border-radius: var(--raio-pequeno); padding: 6px 10px; }
+.acoes { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.acoes .campo + .botao { margin-top: 2px; }
 /* sugestão da IA: violeta, a cor das previsões */
 .acao-sugerida {
   font-size: 0.84rem;

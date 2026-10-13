@@ -141,7 +141,7 @@ export default function SimularSessao() {
               </select>
             </label>
             <div>
-              <button className="botao" onClick={executar} disabled={rodando}>
+              <button className="botao" onClick={executar} disabled={rodando} aria-busy={rodando || undefined}>
                 {rodando ? "Recarregando…" : "Iniciar recarga"}
               </button>
             </div>

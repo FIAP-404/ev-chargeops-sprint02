@@ -64,7 +64,7 @@ export default function Faturas() {
               {meses.map((m) => <option key={m} value={m}>{nomeMes(m)}</option>)}
             </select>
           </label>
-          <button className="botao" onClick={fecharMes} disabled={gerando || !mes}>
+          <button className="botao" onClick={fecharMes} disabled={gerando || !mes} aria-busy={gerando || undefined}>
             {faturas?.length ? "Recalcular faturas do mês" : "Fechar mês e gerar faturas"}
           </button>
         </div>

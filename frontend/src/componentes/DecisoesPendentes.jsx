@@ -34,6 +34,7 @@ function Decisao({ sessao: s, moradores, acao, aoDecidir }) {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState(null);
   const semDono = s.status_cobranca === "quarentena";
+  const comCredito = Number(credito.replace(",", ".")) > 0;
 
   async function decidir(decisao) {
     setEnviando(true);
@@ -45,7 +46,7 @@ function Decisao({ sessao: s, moradores, acao, aoDecidir }) {
           decisao,
           usuario_id: semDono && morador ? Number(morador) : null,
           ajuste_valor: Number(credito.replace(",", ".")) || 0,
-          observacao: decisao === "liberar" ? (credito ? "crédito concedido pelo gestor" : "conferida pelo gestor") : "não cobrada",
+          observacao: decisao === "liberar" ? (comCredito ? "crédito concedido pelo gestor" : "conferida pelo gestor") : "não cobrada",
         },
       });
       aoDecidir();
@@ -87,35 +88,39 @@ function Decisao({ sessao: s, moradores, acao, aoDecidir }) {
         {erro && <p className="erro">{erro}</p>}
       </div>
 
+      {/* um primário (liberar) e uma saída de baixa ênfase (não cobrar); o
+          campo do grupo muda conforme o caso: morador ou crédito opcional */}
       <div className="acoes">
-        {semDono && (
+        {semDono ? (
           <label className="campo">
             Atribuir a
-            <select value={morador} onChange={(e) => setMorador(e.target.value)}>
+            <select value={morador} onChange={(e) => setMorador(e.target.value)} aria-describedby={`ajuda-${s.id}`}>
               <option value="">Escolha o morador</option>
               {moradores.map((m) => (
                 <option key={m.id} value={m.id}>{m.unidade}, {m.nome}</option>
               ))}
             </select>
+            {!morador && <span className="ajuda" id={`ajuda-${s.id}`}>Necessário para liberar a cobrança.</span>}
           </label>
-        )}
-        <button className="botao" disabled={enviando || (semDono && !morador)} onClick={() => decidir("liberar")}>
-          Liberar para cobrança
-        </button>
-        {!semDono && (
-          <div className="credito">
+        ) : (
+          <label className="campo">
+            Crédito ao morador (opcional)
             <input
-              aria-label="Valor do crédito em reais"
               placeholder="R$ 0,00"
               inputMode="decimal"
               value={credito}
               onChange={(e) => setCredito(e.target.value)}
             />
-            <button className="botao secundario" disabled={enviando || !credito} onClick={() => decidir("liberar")}>
-              Liberar com crédito
-            </button>
-          </div>
+          </label>
         )}
+        <button
+          className="botao"
+          disabled={enviando || (semDono && !morador)}
+          aria-busy={enviando || undefined}
+          onClick={() => decidir("liberar")}
+        >
+          {comCredito ? "Liberar com crédito" : "Liberar para cobrança"}
+        </button>
         <button className="botao perigo" disabled={enviando} onClick={() => decidir("descartar")}>
           Não cobrar
         </button>
