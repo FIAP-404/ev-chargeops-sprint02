@@ -26,10 +26,13 @@ from sklearn.ensemble import IsolationForest
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
+# As variáveis são relativas ao veículo sempre que possível: 3 kW é normal
+# para um híbrido plug-in, mas é sinal de problema num carro que carrega a 7 kW.
 FEATURES = [
     "duracao_h",
     "kwh",
-    "potencia_media_kw",
+    "fracao_bateria",  # kWh entregues / capacidade da bateria
+    "razao_potencia",  # potência média / potência esperada para o veículo
     "potencia_max_kw",
     "ociosas_h",
     "fracao_ociosa",
@@ -38,7 +41,8 @@ FEATURES = [
 NOMES_FEATURES = {
     "duracao_h": ("duração", "h"),
     "kwh": ("energia", "kWh"),
-    "potencia_media_kw": ("potência média", "kW"),
+    "fracao_bateria": ("fração da bateria carregada", ""),
+    "razao_potencia": ("potência média / esperada", ""),
     "potencia_max_kw": ("potência máxima", "kW"),
     "ociosas_h": ("tempo ocioso", "h"),
     "fracao_ociosa": ("fração do tempo ociosa", ""),
@@ -48,14 +52,22 @@ MIN_SESSOES_TREINO = 40  # abaixo disso o modelo não é confiável -> só regra
 PERCENTIL_CORTE = 0.97  # sessão mais atípica que 97% do histórico
 
 
+def br(valor: float, casas: int = 1) -> str:
+    """Número com vírgula decimal: 47.06 -> '47,1'."""
+    return f"{valor:.{casas}f}".replace(".", ",")
+
+
 def features_da_sessao(duracao_min: float, kwh: float, potencia_media_kw: float,
-                       potencia_max_kw: float, minutos_ociosos: float) -> dict:
+                       potencia_max_kw: float, minutos_ociosos: float,
+                       potencia_esperada_kw: float, bateria_kwh: float) -> dict:
     duracao_h = max(duracao_min / 60, 1 / 60)
     ociosas_h = minutos_ociosos / 60
     return {
         "duracao_h": duracao_h,
         "kwh": kwh,
         "potencia_media_kw": potencia_media_kw,
+        "fracao_bateria": kwh / bateria_kwh if bateria_kwh else 0.0,
+        "razao_potencia": min(potencia_media_kw / potencia_esperada_kw, 3.0) if potencia_esperada_kw else 1.0,
         "potencia_max_kw": potencia_max_kw,
         "ociosas_h": ociosas_h,
         "fracao_ociosa": min(ociosas_h / duracao_h, 1.0),
@@ -128,9 +140,10 @@ class DetectorAnomalias:
             if z[nome] < 1.5:
                 break
             rotulo, unidade = NOMES_FEATURES[nome]
+            casas = 1 if unidade else 2
+            sufixo = f" {unidade}" if unidade else ""
             desvios.append(
-                f"{rotulo} {X.iloc[0][nome]:.1f}{(' ' + unidade) if unidade else ''} "
-                f"(típico: {self.media[nome]:.1f}{(' ' + unidade) if unidade else ''})"
+                f"{rotulo} {br(X.iloc[0][nome], casas)}{sufixo} (típico: {br(self.media[nome], casas)}{sufixo})"
             )
         return ResultadoModelo(percentil=round(percentil, 4), outlier=outlier, desvios=desvios)
 
@@ -159,7 +172,7 @@ def aplicar_regras(
     if capacidade_bateria_kwh and kwh > capacidade_bateria_kwh * 1.05:
         motivos.append(Motivo(
             "kwh_acima_da_bateria",
-            f"{kwh:.1f} kWh entregues, mais que a bateria do veículo ({capacidade_bateria_kwh:.0f} kWh). "
+            f"{br(kwh, 1)} kWh entregues, mais que a bateria do veículo ({br(capacidade_bateria_kwh, 1)} kWh). "
             "Possível erro de medição ou RFID usado em outro veículo.",
             "alta", "regra",
         ))
@@ -167,15 +180,15 @@ def aplicar_regras(
     if feats["potencia_max_kw"] > potencia_max_carregador_kw * 1.10:
         motivos.append(Motivo(
             "potencia_acima_do_limite",
-            f"Pico de {feats['potencia_max_kw']:.1f} kW, acima do limite do carregador "
-            f"({potencia_max_carregador_kw:.1f} kW). Verificar medidor/telemetria.",
+            f"Pico de {br(feats['potencia_max_kw'], 1)} kW, acima do limite do carregador "
+            f"({br(potencia_max_carregador_kw, 1)} kW). Verificar medidor/telemetria.",
             "alta", "regra",
         ))
 
     if feats["duracao_h"] >= 1 and kwh < 0.5:
         motivos.append(Motivo(
             "conectado_sem_carregar",
-            f"{feats['duracao_h']:.1f} h conectado e só {kwh:.2f} kWh entregues.",
+            f"{br(feats['duracao_h'], 1)} h conectado e só {br(kwh, 2)} kWh entregues.",
             "media", "regra",
         ))
 
@@ -188,10 +201,10 @@ def aplicar_regras(
 
     if len(historico_kwh_usuario) >= 8:
         media, desvio = float(np.mean(historico_kwh_usuario)), float(np.std(historico_kwh_usuario))
-        if kwh > 5 and kwh > media + 3 * max(desvio, 1.0):
+        if kwh > 5 and kwh > media + 3 * max(desvio, 1.0) and kwh > 1.5 * media:
             motivos.append(Motivo(
                 "acima_do_perfil_do_usuario",
-                f"{kwh:.1f} kWh, bem acima do perfil do usuário (média {media:.1f} kWh).",
+                f"{br(kwh, 1)} kWh, bem acima do perfil do usuário (média {br(media, 1)} kWh).",
                 "media", "regra",
             ))
 
@@ -200,7 +213,7 @@ def aplicar_regras(
         # porque a taxa de ociosidade já é aplicada automaticamente pelo rateio
         motivos.append(Motivo(
             "ociosidade_longa",
-            f"Veículo ocupou a vaga por {feats['ociosas_h']:.1f} h depois da carga completa.",
+            f"Veículo ocupou a vaga por {br(feats['ociosas_h'], 1)} h depois da carga completa.",
             "baixa", "regra",
         ))
     return motivos

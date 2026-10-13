@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app.ia import servico as ia
+from app.ia.anomalias import br
 
 
 class ErroSessao(Exception):
@@ -62,6 +63,12 @@ def sessao_aberta_do_carregador(db: Session, carregador_id: str) -> m.SessaoReca
     )
 
 
+def registrar_tentativa_ocupado(db: Session, carregador_id: str, usuario_id: int | None, quando: datetime) -> None:
+    """Guarda a demanda que não foi atendida porque o carregador estava em uso."""
+    db.add(m.TentativaOcupado(carregador_id=carregador_id, usuario_id=usuario_id, timestamp=quando))
+    db.commit()
+
+
 def iniciar_sessao(
     db: Session,
     carregador_id: str,
@@ -82,12 +89,7 @@ def iniciar_sessao(
 
     # um carregador só atende uma sessão por vez; a tentativa vira dado de demanda
     if sessao_aberta_do_carregador(db, carregador_id) is not None:
-        db.add(
-            m.TentativaOcupado(
-                carregador_id=carregador_id, usuario_id=usuario.id if usuario else None, timestamp=inicio_em
-            )
-        )
-        db.commit()
+        registrar_tentativa_ocupado(db, carregador_id, usuario.id if usuario else None, inicio_em)
         raise ErroSessao("Carregador ocupado: já existe uma sessão em andamento", 409)
 
     sessao = m.SessaoRecarga(
@@ -223,8 +225,8 @@ def encerrar_sessao(
                 sessao_id=sessao.id,
                 titulo=f"Sessão #{sessao.id} sem usuário identificado",
                 mensagem=(
-                    f"RFID não cadastrado ou inativo. {sessao.kwh_entregue:.1f} kWh entregues "
-                    f"em {sessao.duracao_min / 60:.1f} h."
+                    f"RFID não cadastrado ou inativo. {br(sessao.kwh_entregue)} kWh entregues "
+                    f"em {br(sessao.duracao_min / 60)} h."
                 ),
                 acao_sugerida="Identificar o responsável e atribuir a sessão a uma unidade antes de cobrar.",
             )

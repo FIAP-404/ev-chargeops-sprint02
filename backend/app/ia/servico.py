@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app.database import PASTA_DADOS
-from app.ia.anomalias import DetectorAnomalias, Motivo, aplicar_regras, features_da_sessao
+from app.ia.anomalias import DetectorAnomalias, Motivo, aplicar_regras, br, features_da_sessao
 from app.ia.previsao import PrevisorDemanda, analisar_capacidade, montar_base_demanda, projetar_kwh_restante
 
 ARQ_DETECTOR = PASTA_DADOS / "modelo_anomalias.joblib"
@@ -36,6 +36,16 @@ _previsor: PrevisorDemanda | None = None
 
 # status que entram no histórico "confiável" usado para treinar
 STATUS_HISTORICO = (m.COBRANCA_LIBERADA, m.COBRANCA_FATURADA)
+
+TITULOS = {
+    "kwh_acima_da_bateria": "energia maior que a bateria do veículo",
+    "potencia_acima_do_limite": "potência acima do limite do carregador",
+    "conectado_sem_carregar": "conectado sem carregar",
+    "falha_equipamento": "encerrada por falha",
+    "acima_do_perfil_do_usuario": "consumo muito acima do perfil do usuário",
+    "ociosidade_longa": "vaga ocupada após carga completa",
+    "padrao_atipico": "padrão atípico detectado pelo modelo",
+}
 
 ACOES = {
     "kwh_acima_da_bateria": "Conferir a leitura do medidor e se o RFID foi usado em outro veículo antes de cobrar.",
@@ -85,14 +95,21 @@ class Avaliacao:
     severidade: str = "nenhuma"
 
 
-def _feats(s: m.SessaoRecarga) -> dict:
-    return features_da_sessao(s.duracao_min, s.kwh_entregue, s.potencia_media_kw, s.potencia_max_kw, s.minutos_ociosos)
+def potencia_esperada(veiculo: m.Veiculo | None, carregador: m.Carregador) -> float:
+    """A potência real é o menor limite entre o carregador e o carregador de bordo do veículo."""
+    if veiculo is None:
+        return carregador.potencia_max_kw
+    return min(veiculo.potencia_ac_max_kw, carregador.potencia_max_kw)
 
 
 def avaliar_sessao_encerrada(db: Session, sessao: m.SessaoRecarga) -> Avaliacao:
-    feats = _feats(sessao)
     carregador = db.get(m.Carregador, sessao.carregador_id)
     veiculo = db.get(m.Veiculo, sessao.veiculo_id) if sessao.veiculo_id else None
+    feats = features_da_sessao(
+        sessao.duracao_min, sessao.kwh_entregue, sessao.potencia_media_kw, sessao.potencia_max_kw,
+        sessao.minutos_ociosos, potencia_esperada(veiculo, carregador),
+        veiculo.capacidade_bateria_kwh if veiculo else 0.0,
+    )
     historico = list(
         db.scalars(
             select(m.SessaoRecarga.kwh_entregue).where(
@@ -142,7 +159,7 @@ def alerta_da_avaliacao(sessao: m.SessaoRecarga, av: Avaliacao, quando: datetime
         tipo="anomalia_sessao",
         severidade=av.severidade,
         sessao_id=sessao.id,
-        titulo=f"Sessão #{sessao.id}: {principal['descricao'].split('.')[0]}",
+        titulo=f"Sessão #{sessao.id}: {TITULOS.get(principal['codigo'], 'comportamento fora do padrão')}",
         mensagem=" ".join(mo["descricao"] for mo in av.motivos) + retida,
         acao_sugerida=ACOES.get(principal["codigo"], "Analisar a sessão."),
         status="aberto",
@@ -153,25 +170,43 @@ def alerta_da_avaliacao(sessao: m.SessaoRecarga, av: Avaliacao, quando: datetime
 # Treino dos modelos
 # --------------------------------------------------------------------------
 def base_sessoes(db: Session) -> pd.DataFrame:
-    linhas = db.execute(
-        select(
-            m.SessaoRecarga.id,
-            m.SessaoRecarga.duracao_min,
-            m.SessaoRecarga.kwh_entregue,
-            m.SessaoRecarga.potencia_media_kw,
-            m.SessaoRecarga.potencia_max_kw,
-            m.SessaoRecarga.minutos_ociosos,
-        ).where(m.SessaoRecarga.status_cobranca.in_(STATUS_HISTORICO))
+    """Histórico usado no treino: sessões já liberadas/faturadas, com veículo identificado."""
+    sessoes = db.scalars(
+        select(m.SessaoRecarga).where(
+            m.SessaoRecarga.status_cobranca.in_(STATUS_HISTORICO),
+            m.SessaoRecarga.veiculo_id.is_not(None),
+        )
     ).all()
-    return pd.DataFrame(
-        [{"sessao_id": r[0], **features_da_sessao(*r[1:])} for r in linhas]
-    )
+    carregadores = {c.id: c for c in db.scalars(select(m.Carregador))}
+    linhas = []
+    for s in sessoes:
+        feats = features_da_sessao(
+            s.duracao_min, s.kwh_entregue, s.potencia_media_kw, s.potencia_max_kw, s.minutos_ociosos,
+            potencia_esperada(s.veiculo, carregadores[s.carregador_id]), s.veiculo.capacidade_bateria_kwh,
+        )
+        linhas.append({"sessao_id": s.id, "inicio_em": s.inicio_em, **feats})
+    return pd.DataFrame(linhas)
 
 
 def chegadas(db: Session) -> list[datetime]:
-    sessoes = db.scalars(select(m.SessaoRecarga.inicio_em)).all()
-    tentativas = db.scalars(select(m.TentativaOcupado.timestamp)).all()
-    return list(sessoes) + list(tentativas)
+    """Demanda real = sessões iniciadas + tentativas com carregador ocupado.
+
+    Se o mesmo usuário tentou, encontrou ocupado e conseguiu carregar até 4 h
+    depois, é a mesma necessidade: contamos só uma vez (a sessão).
+    """
+    sessoes = db.execute(select(m.SessaoRecarga.usuario_id, m.SessaoRecarga.inicio_em)).all()
+    inicios_por_usuario: dict[int, list[datetime]] = {}
+    for usuario_id, inicio in sessoes:
+        inicios_por_usuario.setdefault(usuario_id, []).append(inicio)
+
+    resultado = [inicio for _, inicio in sessoes]
+    for usuario_id, ts in db.execute(select(m.TentativaOcupado.usuario_id, m.TentativaOcupado.timestamp)).all():
+        atendida_depois = any(
+            timedelta(0) <= inicio - ts <= timedelta(hours=4) for inicio in inicios_por_usuario.get(usuario_id, [])
+        )
+        if not atendida_depois:
+            resultado.append(ts)
+    return resultado
 
 
 def treinar_modelos(db: Session, agora: datetime | None = None) -> dict:
@@ -264,7 +299,7 @@ def atualizar_alertas_capacidade(db: Session, agora: datetime | None = None) -> 
             mensagem=(
                 f"Ocupação prevista para a próxima semana: {f['ocupacao_proxima_semana']:.0%}; "
                 f"em {analise['horizonte_semanas']} semanas: {f['ocupacao_fim_horizonte']:.0%}. "
-                f"Crescimento estimado da demanda: {analise['metricas_modelo'].get('crescimento_semanal_pct', 0)}% por semana."
+                f"Crescimento estimado da demanda: {br(analise['metricas_modelo'].get('crescimento_semanal_pct', 0), 1)}% por semana."
             ),
             acao_sugerida=(
                 "Levar à assembleia/gestão a instalação de um segundo ponto ou criar regra de "

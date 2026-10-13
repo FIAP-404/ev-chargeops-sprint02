@@ -74,6 +74,8 @@ class Veiculo(Base):
     placa: Mapped[str] = mapped_column(String(10))
     modelo: Mapped[str] = mapped_column(String(60))
     capacidade_bateria_kwh: Mapped[float] = mapped_column(Float)
+    # limite do carregador de bordo (AC) do veículo; a IA usa para saber a potência esperada
+    potencia_ac_max_kw: Mapped[float] = mapped_column(Float, default=7.4)
 
     usuario: Mapped[Usuario] = relationship(back_populates="veiculos")
 

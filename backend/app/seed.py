@@ -70,8 +70,14 @@ def popular_cadastro(db: Session) -> None:
         db.add(usuario)
         db.flush()
         unidade.responsavel_usuario_id = usuario.id
-        for placa, modelo, bateria, _ac, rfid in veiculos:
-            veiculo = m.Veiculo(usuario_id=usuario.id, placa=placa, modelo=modelo, capacidade_bateria_kwh=bateria)
+        for placa, modelo, bateria, potencia_ac, rfid in veiculos:
+            veiculo = m.Veiculo(
+                usuario_id=usuario.id,
+                placa=placa,
+                modelo=modelo,
+                capacidade_bateria_kwh=bateria,
+                potencia_ac_max_kw=potencia_ac,
+            )
             db.add(veiculo)
             db.flush()
             db.add(m.CredencialRFID(usuario_id=usuario.id, veiculo_id=veiculo.id, codigo_rfid_hash=hash_rfid(rfid)))

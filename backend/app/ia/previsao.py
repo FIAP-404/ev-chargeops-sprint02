@@ -126,7 +126,7 @@ class PrevisorDemanda:
         self.n_semanas = n_semanas
         self.primeira_segunda = df.attrs.get("primeira_segunda")
         coef = dict(zip(_matriz(df.head(1)).columns, self.modelo.coef_))
-        self.metricas["crescimento_semanal_pct"] = round((np.exp(coef["tendencia_semana"] / 52) - 1) * 100, 2)
+        self.metricas["crescimento_semanal_pct"] = round(float(np.exp(coef["tendencia_semana"] / 52) - 1) * 100, 2)
         return {"treinado": True, **self.metricas}
 
     def prever(self, semanas_a_frente: int) -> pd.DataFrame:
