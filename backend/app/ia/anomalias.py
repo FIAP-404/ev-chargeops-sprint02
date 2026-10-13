@@ -143,7 +143,7 @@ class DetectorAnomalias:
             casas = 1 if unidade else 2
             sufixo = f" {unidade}" if unidade else ""
             desvios.append(
-                f"{rotulo} {br(X.iloc[0][nome], casas)}{sufixo} (típico: {br(self.media[nome], casas)}{sufixo})"
+                f"{rotulo} {br(X.iloc[0][nome], casas)}{sufixo}, típico {br(self.media[nome], casas)}{sufixo}"
             )
         return ResultadoModelo(percentil=round(percentil, 4), outlier=outlier, desvios=desvios)
 

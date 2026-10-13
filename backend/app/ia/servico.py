@@ -137,7 +137,7 @@ def avaliar_sessao_encerrada(db: Session, sessao: m.SessaoRecarga) -> Avaliacao:
             detalhe = "; ".join(resultado_modelo.desvios) or "combinação incomum de duração, energia e potência"
             motivos.append(Motivo(
                 "padrao_atipico",
-                f"Isolation Forest: sessão mais atípica que {resultado_modelo.percentil:.0%} do histórico ({detalhe}).",
+                f"Isolation Forest: sessão mais atípica que {resultado_modelo.percentil:.0%} do histórico. Destaques: {detalhe}.",
                 "media", "modelo",
             ))
 
