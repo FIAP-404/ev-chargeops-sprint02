@@ -53,7 +53,8 @@ ACOES = {
     "conectado_sem_carregar": "Verificar se houve falha no carregador ou no veículo; avaliar descartar a sessão.",
     "falha_equipamento": "Confirmar a falha e, se comprovada, conceder crédito (ajuste) ao usuário.",
     "acima_do_perfil_do_usuario": "Confirmar com o usuário se houve uso de outro veículo ou empréstimo do cartão.",
-    "ociosidade_longa": "Avisar o usuário; a taxa de ociosidade já foi aplicada conforme a regra.",
+    "ociosidade_longa": "O morador já recebeu o aviso na Área do morador; a taxa de ociosidade entra no rateio "
+                        "conforme a regra, sem reter a cobrança.",
     "padrao_atipico": "Verificar a sessão: o padrão não se parece com o histórico (possível defeito ou uso indevido).",
 }
 

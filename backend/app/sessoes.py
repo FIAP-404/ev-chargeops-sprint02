@@ -9,6 +9,7 @@ Segue o fluxo da seção 5.2 da Sprint 01:
   6. sessão encerrada com kWh entregues      -> encerrar_sessao()
   7/8. IA avalia a sessão e decide se ela vai direto para o rateio
        ou fica retida para revisão do gestor -> app.ia.servico
+  9. usuário recebe o resumo da sessão       -> app.notificacoes
   ...
   gestor decide sobre sessões retidas        -> revisar_sessao()
 
@@ -23,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models as m
+from app import notificacoes
 from app.faturamento import marcar_fatura_desatualizada, valor_da_sessao
 from app.ia import servico as ia
 from app.ia.anomalias import br
@@ -277,6 +279,10 @@ def encerrar_sessao(
         if avaliacao.motivos:
             # motivos de severidade baixa só geram aviso; média/alta também retêm a cobrança
             db.add(ia.alerta_da_avaliacao(sessao, avaliacao, fim_em))
+        # passo 9 do fluxo 5.2: o morador recebe o resumo (a quarentena não tem a quem avisar)
+        notificacoes.notificar_resumo_sessao(db, sessao, avaliacao.motivos, fim_em)
+        if any(mo["codigo"] == "ociosidade_longa" for mo in avaliacao.motivos):
+            notificacoes.notificar_ociosidade(db, sessao, fim_em)
 
     # sessão aberta no fechamento do mês: a fatura já gerada ficou sem ela
     marcar_fatura_desatualizada(db, sessao)
@@ -338,6 +344,8 @@ def revisar_sessao(
     ):
         alerta.status = "resolvido"
         alerta.resolucao = f"{decisao}: {observacao}".strip(": ")
+    if sessao.usuario_id is not None:
+        notificacoes.notificar_revisao(db, sessao, decisao, sessao.ajuste_valor, observacao)
     marcar_fatura_desatualizada(db, sessao)
     db.commit()
     return sessao

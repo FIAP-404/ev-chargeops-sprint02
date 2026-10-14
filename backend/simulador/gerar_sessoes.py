@@ -28,7 +28,7 @@ import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import event, select
+from sqlalchemy import event, select, update
 
 from app import models as m
 from app.database import Base, SessionLocal, engine
@@ -257,6 +257,14 @@ class Simulador:
                     fila.append((volta, perfil, "retentativa"))
                     fila.sort(key=lambda c: c[0])
             dia += timedelta(days=1)
+
+        # avisos de recargas com mais de 7 dias já foram vistos pelo morador;
+        # assim a caixa de avisos mostra como não lido só o que é recente
+        antigas = select(m.SessaoRecarga.id).where(m.SessaoRecarga.inicio_em < self.ate - timedelta(days=7))
+        self.db.execute(
+            update(m.Notificacao).where(m.Notificacao.sessao_id.in_(antigas)).values(lida=True, lida_em=self.ate)
+        )
+        self.db.commit()
 
     def fechar_mes(self, mes: str, agora: datetime) -> None:
         revisar_pendencias_do_gestor(self.db, mes, self.rng)

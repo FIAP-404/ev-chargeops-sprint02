@@ -155,3 +155,25 @@ def test_exportar_csv_mes_invalido_ou_vazio(cliente):
     assert cliente.get("/faturas/exportar.csv", params={"mes": "2026-13"}).status_code == 400
     assert cliente.get("/faturas/exportar.csv", params={"mes": "agosto"}).status_code == 400
     assert cliente.get("/faturas/exportar.csv", params={"mes": "2025-01"}).status_code == 404
+
+
+def test_avisos_do_morador_listar_e_marcar_como_lida(cliente):
+    r = cliente.post("/sessoes/iniciar", json={
+        "codigo_rfid": "RFID-A1204-01", "inicio_em": "2026-08-03T19:10:00", "leitura_inicial_kwh": 1000,
+    })
+    sessao = r.json()
+    _telemetria_e_encerrar(cliente, sessao["id"], [1006.2, 1012.4, 1018.6], "2026-08-03T22:40:00")
+    painel = f"/usuarios/{sessao['usuario_id']}/painel"
+    assert cliente.get(painel, params={"mes": "2026-08"}).json()["notificacoes_nao_lidas"] == 1
+
+    avisos = cliente.get(f"/usuarios/{sessao['usuario_id']}/notificacoes").json()
+    assert len(avisos) == 1 and avisos[0]["sessao_id"] == sessao["id"]
+    assert avisos[0]["titulo"] == "Recarga encerrada: 18,6 kWh" and avisos[0]["lida"] is False
+
+    r = cliente.post(f"/notificacoes/{avisos[0]['id']}/lida")
+    assert r.status_code == 200 and r.json()["lida"] is True and r.json()["lida_em"]
+    assert cliente.get(painel, params={"mes": "2026-08"}).json()["notificacoes_nao_lidas"] == 0
+    nao_lidas = cliente.get(f"/usuarios/{sessao['usuario_id']}/notificacoes", params={"nao_lidas": True})
+    assert nao_lidas.json() == []
+    assert cliente.post("/notificacoes/999999/lida").status_code == 404
+    assert cliente.get("/usuarios/999999/notificacoes").status_code == 404

@@ -206,7 +206,7 @@ def aplicar_regras(
             ))
 
     if feats["ociosas_h"] >= 3:
-        # baixa: gera alerta para avisar o usuário, mas não retém a cobrança,
+        # baixa: alerta ao gestor + aviso ao morador (app/notificacoes.py), mas não retém a cobrança,
         # porque a taxa de ociosidade já é aplicada automaticamente pelo rateio
         motivos.append(Motivo(
             "ociosidade_longa",

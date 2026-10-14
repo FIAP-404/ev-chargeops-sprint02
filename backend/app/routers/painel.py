@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models as m
@@ -188,6 +188,11 @@ def painel_usuario(usuario_id: int, mes: str | None = None, db: Session = Depend
     faturas = db.scalars(
         select(m.Fatura).where(m.Fatura.unidade_id == unidade.id).order_by(m.Fatura.mes_referencia.desc())
     )
+    nao_lidas = db.scalar(
+        select(func.count(m.Notificacao.id)).where(
+            m.Notificacao.usuario_id == usuario.id, m.Notificacao.lida.is_(False)
+        )
+    )
     return {
         "mes": mes,
         "usuario": {"id": usuario.id, "nome": usuario.nome, "email": usuario.email},
@@ -200,4 +205,5 @@ def painel_usuario(usuario_id: int, mes: str | None = None, db: Session = Depend
         "projecao_ia": projecao,
         "sessoes": [sessao_dict(s) for s in sessoes],
         "faturas": [fatura_dict(f) for f in faturas],
+        "notificacoes_nao_lidas": nao_lidas,
     }

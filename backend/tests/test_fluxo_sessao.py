@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app import models as m
+from app import notificacoes
 from app.faturamento import gerar_faturas, valor_da_sessao
 from app.seed import CARREGADOR_ID
 from app.sessoes import ErroSessao, encerrar_sessao, iniciar_sessao, registrar_telemetria, revisar_sessao
@@ -24,6 +25,13 @@ def recarga(db, rfid, kwh, inicio=T0, horas_carga=3.0, ociosas_h=0.0, potencia=6
     if ociosas_h:
         registrar_telemetria(db, s.id, fim_carga, 0.0, leitura_inicial + kwh, "carga_completa")
     return encerrar_sessao(db, s.id, motivo, fim_carga + timedelta(hours=ociosas_h))
+
+
+def avisos(db, sessao_id, tipo=None):
+    q = select(m.Notificacao).where(m.Notificacao.sessao_id == sessao_id)
+    if tipo:
+        q = q.where(m.Notificacao.tipo == tipo)
+    return db.scalars(q).all()
 
 
 def test_sessao_identificada_normal_vai_para_rateio(db):
@@ -91,6 +99,43 @@ def test_ociosidade_longa_avisa_mas_nao_retem(db):
     assert s.status_cobranca == m.COBRANCA_LIBERADA
     alerta = db.scalar(select(m.AlertaIA).where(m.AlertaIA.sessao_id == s.id))
     assert alerta is not None and alerta.severidade == "baixa"
+    # além do alerta ao gestor, o morador recebe o aviso de ociosidade
+    [aviso] = avisos(db, s.id, "ociosidade")
+    assert aviso.usuario_id == s.usuario_id
+    assert "5,0 h conectado" in aviso.mensagem and "R$ 27,00" in aviso.mensagem
+
+
+def test_encerramento_gera_resumo_para_o_morador(db):
+    s = recarga(db, "RFID-A1204-01", 18.6)
+    [aviso] = avisos(db, s.id)
+    assert aviso.tipo == "resumo_sessao" and aviso.usuario_id == s.usuario_id
+    assert "18,6 kWh" in aviso.mensagem and "liberada" in aviso.mensagem
+    assert aviso.lida is False
+
+
+def test_sessao_sem_identificacao_nao_notifica(db):
+    s = recarga(db, "CARTAO-NAO-CADASTRADO", 10)
+    assert avisos(db, s.id) == []
+
+
+def test_sessao_retida_avisa_que_esta_em_revisao(db):
+    s = recarga(db, "RFID-A1204-02", 40, horas_carga=6)
+    [aviso] = avisos(db, s.id)
+    assert "em revisão" in aviso.mensagem and "bateria" in aviso.mensagem
+
+
+def test_falha_no_envio_nao_impede_o_encerramento(db):
+    class EnviadorQuebrado:
+        def enviar(self, n, usuario):
+            raise ConnectionError("provedor fora do ar")
+
+    notificacoes.usar_enviador(EnviadorQuebrado())
+    try:
+        s = recarga(db, "RFID-A1204-01", 18.6)
+    finally:
+        notificacoes.usar_enviador(notificacoes.EnviadorConsole())
+    assert s.status_cobranca == m.COBRANCA_LIBERADA
+    assert len(avisos(db, s.id)) == 1  # o aviso continua na caixa do app
 
 
 def test_sessao_retida_nao_entra_na_fatura_ate_revisao(db):
@@ -122,6 +167,8 @@ def test_credito_limitado_ao_valor_da_sessao(db):
     revisar_sessao(db, s.id, "liberar", ajuste_valor=39.90, observacao="crédito integral")
     assert s.status_cobranca == m.COBRANCA_LIBERADA
     assert s.ajuste_valor == pytest.approx(39.90)
+    [aviso] = avisos(db, s.id, "revisao")
+    assert aviso.titulo == "Crédito de R$ 39,90 concedido"
 
 
 def test_fatura_do_exemplo_sprint01_via_fluxo_completo(db):

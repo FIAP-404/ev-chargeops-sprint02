@@ -88,3 +88,17 @@ def parametros_dict(p: m.ParametrosRateio) -> dict:
         "tolerancia_ociosidade_min": p.tolerancia_ociosidade_min,
         "penalidade_ociosidade_hora": p.penalidade_ociosidade_hora,
     }
+
+
+def notificacao_dict(n: m.Notificacao) -> dict:
+    return {
+        "id": n.id,
+        "criado_em": n.criado_em.isoformat(timespec="minutes"),
+        "sessao_id": n.sessao_id,
+        "tipo": n.tipo,
+        "titulo": n.titulo,
+        "mensagem": n.mensagem,
+        "canal": n.canal,
+        "lida": n.lida,
+        "lida_em": n.lida_em.isoformat(timespec="minutes") if n.lida_em else None,
+    }

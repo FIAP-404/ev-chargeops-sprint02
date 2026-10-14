@@ -229,3 +229,26 @@ class AlertaIA(Base):
     acao_sugerida: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="aberto")  # aberto | resolvido
     resolucao: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
+class Notificacao(Base):
+    """Aviso ao morador: resumo da recarga, ociosidade longa e decisão do gestor.
+
+    Não estava no esquema da Sprint 01. Atende o passo 9 do fluxo 5.2 ("usuário
+    recebe resumo da sessão"). Fica gravada para a caixa de avisos do app; o
+    envio por outro canal passa por app/notificacoes.py.
+    """
+
+    __tablename__ = "notificacoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, index=True)
+    unidade_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"), nullable=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    sessao_id: Mapped[int | None] = mapped_column(ForeignKey("sessoes_recarga.id"), nullable=True, index=True)
+    tipo: Mapped[str] = mapped_column(String(20))  # resumo_sessao | ociosidade | revisao
+    titulo: Mapped[str] = mapped_column(String(160))
+    mensagem: Mapped[str] = mapped_column(Text)
+    canal: Mapped[str] = mapped_column(String(20), default="app")
+    lida: Mapped[bool] = mapped_column(Boolean, default=False)
+    lida_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
