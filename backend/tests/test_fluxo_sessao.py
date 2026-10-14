@@ -111,6 +111,19 @@ def test_qr_usuario_com_dois_veiculos_precisa_escolher(db):
     assert s.veiculo_id == marina.veiculos[1].id
 
 
+def test_qr_usuario_inexistente_recusa_com_404(db):
+    with pytest.raises(ErroSessao, match="Usuário não encontrado") as erro:
+        iniciar_sessao_app(db, CARREGADOR_ID, QR_TOKEN_CARREGADOR, 9999, None, T0, 1000)
+    assert erro.value.status_http == 404
+
+
+def test_qr_usuario_sem_veiculo_recusa_com_422(db):
+    otavio = usuario(db, "otavio.b202@exemplo.com")  # B-202 não tem carro elétrico
+    with pytest.raises(ErroSessao, match="sem veículo") as erro:
+        iniciar_sessao_app(db, CARREGADOR_ID, QR_TOKEN_CARREGADOR, otavio.id, None, T0, 1000)
+    assert erro.value.status_http == 422
+
+
 def test_qr_com_carregador_ocupado_recusa_e_registra_tentativa(db):
     iniciar_sessao(db, CARREGADOR_ID, "RFID-A0302-01", T0, 500)
     juliana = usuario(db, "juliana.a507@exemplo.com")
