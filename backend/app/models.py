@@ -62,7 +62,7 @@ class Usuario(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nome: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(120))
-    perfil: Mapped[str] = mapped_column(String(20), default="morador")  # morador | gestor | visitante
+    perfil: Mapped[str] = mapped_column(String(20), default="morador")  # morador | gestor
     status: Mapped[str] = mapped_column(String(20), default="ativo")  # ativo | inativo
     unidade_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"), nullable=True)
 
