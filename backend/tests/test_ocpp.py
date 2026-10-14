@@ -2,13 +2,25 @@
 import json
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import func, select
+from starlette.websockets import WebSocketDisconnect
 
 from app import models as m
+from app.database import get_db
 from app.integracoes.ocpp16 import processar, processar_texto
+from app.main import app
 
 CARREGADOR = "goodwe_hca_g2_l1"
 TAG = "RFID-A1204-01"
+
+
+@pytest.fixture
+def cliente(db):
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
 
 
 def chamar(db, acao, payload, id_mensagem="1"):
@@ -155,3 +167,17 @@ def test_status_faulted_registra_evento_erro(db):
     tipos = db.scalars(select(m.EventoSessao.tipo_evento).where(m.EventoSessao.sessao_id == transacao)).all()
     assert tipos == ["inicio", "erro"]
 
+
+def test_websocket_boot_notification(cliente):
+    with cliente.websocket_connect(f"/ocpp/{CARREGADOR}", subprotocols=["ocpp1.6"]) as ws:
+        assert ws.accepted_subprotocol == "ocpp1.6"
+        boot = {"chargePointVendor": "GoodWe", "chargePointModel": "HCA G2"}
+        ws.send_text(json.dumps([2, "42", "BootNotification", boot]))
+        r = json.loads(ws.receive_text())
+        assert r[:2] == [3, "42"] and r[2]["status"] == "Accepted"
+
+
+def test_websocket_sem_subprotocolo_e_recusado(cliente):
+    with pytest.raises(WebSocketDisconnect):
+        with cliente.websocket_connect(f"/ocpp/{CARREGADOR}"):
+            pass
