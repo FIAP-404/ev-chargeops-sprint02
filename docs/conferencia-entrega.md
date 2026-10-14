@@ -16,6 +16,9 @@ O pitch individual de cinco minutos deverá ocorrer durante a prova presencial, 
 
 - O portal mostrava **entrega pendente**, última modificação “—”, prazo de 13/10/2026 às 23h59 e somente Fernando no grupo 35. Nenhuma submissão foi feita nesta revisão.
 - O repositório é **privado**. É necessário confirmar a conta do avaliador e seu acesso; a consulta aos colaboradores pediu reautenticação do proprietário. Não foram alteradas permissões nem visibilidade.
-- Fernando (RM570046), Joedson (RM573981), Caetano (RM569262) e Mylena (RM572383) estão identificados na documentação. O quinto nome, **Erik Fabiano de Jesus Appe (RM571067)**, consta tanto da Sprint 1 quanto desta Sprint 2. Seu vínculo atual precisa ser confirmado pela equipe antes de qualquer remoção; o nome foi preservado.
+
+## Composição atual confirmada
+
+Fernando confirmou a saída de Erik da equipe. A lista atual desta Sprint 2 é Fernando (RM570046), Joedson (RM573981), Caetano (RM569262) e Mylena (RM572383). O README foi atualizado; o histórico de commits e os créditos de contribuições anteriores foram preservados.
 
 Fonte oficial: https://on.fiap.com.br/mod/assign/view.php?id=662437&returnto=conteudocurso

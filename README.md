@@ -5,7 +5,7 @@
 
 - **Equipe:** FIAP 404
 - **Sprint 01 (pesquisa e arquitetura):** https://github.com/FIAP-404/ev-chargeops-sprint01
-- **Integrantes:** Fernando dos Santos Motta (RM570046), Joedson da Silva Souza (RM573981), Caetano de Medeiros Bona (RM569262), Erik Fabiano de Jesus Appe (RM571067), Mylena Ramalho da Silva Torquato (RM572383)
+- **Integrantes:** Fernando dos Santos Motta (RM570046), Joedson da Silva Souza (RM573981), Caetano de Medeiros Bona (RM569262), Mylena Ramalho da Silva Torquato (RM572383)
 
 ## Sumário
 
