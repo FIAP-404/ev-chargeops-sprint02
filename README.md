@@ -5,7 +5,7 @@
 
 - **Equipe:** FIAP 404
 - **Sprint 01 (pesquisa e arquitetura):** https://github.com/FIAP-404/ev-chargeops-sprint01
-- **Integrantes:** Fernando dos Santos Motta (RM570046), Joedson da Silva Souza (RM573981), Caetano de Medeiros Bona (RM569262), Erik Fabiano de Jesus Appe (RM571067), Mylena Ramalho da Silva Torquato (RM572383)
+- **Integrantes:** Fernando dos Santos Motta (RM570046), Joedson da Silva Souza (RM573981), Caetano de Medeiros Bona (RM569262), Mylena Ramalho da Silva Torquato (RM572383)
 
 ## Sumário
 
@@ -422,3 +422,7 @@ Os commits seguem o Conventional Commits, em português: `tipo(escopo): descriç
 ## 11. Uso de IA no desenvolvimento
 
 Usamos um assistente de programação com IA (Claude, da Anthropic) para revisar o código e apontar bugs, sugerir casos de teste, apoiar a implementação de partes do back-end e do front-end e revisar o texto da documentação. Todo trecho sugerido foi lido, executado e testado pela equipe antes do commit. As decisões de arquitetura, as regras de rateio, os parâmetros e a avaliação do módulo de IA são da equipe. O `docs/guia-do-codigo.md` serve para que cada integrante consiga explicar qualquer parte do código.
+
+## Conferência da entrega
+
+O código, README, evidências e `entrega.txt` estão versionados. A conferência técnica e as pendências de grupo, acesso do avaliador e validação presencial estão em [`docs/conferencia-entrega.md`](docs/conferencia-entrega.md). A publicação no GitHub não comprova a submissão no portal.
