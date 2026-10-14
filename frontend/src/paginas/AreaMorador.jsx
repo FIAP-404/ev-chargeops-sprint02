@@ -167,6 +167,9 @@ export default function AreaMorador() {
                 pendentes={p.fatura_parcial.sessoes_pendentes.length}
               />
             )}
+            <button className="botao secundario" onClick={() => window.print()}>
+              Imprimir / salvar PDF
+            </button>
           </div>
         </div>
       )}

@@ -226,6 +226,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 .botao.perigo:disabled { background: transparent; }
 .botao[aria-busy="true"] { cursor: progress; }
+a.botao { text-decoration: none; }
 
 .campo { display: flex; flex-direction: column; gap: 4px; font-size: 0.83rem; color: var(--tinta-2); font-weight: 500; }
 .campo input, .campo select, select.seletor {
@@ -416,4 +417,14 @@ tr.selecionada td:first-child { box-shadow: inset 3px 0 0 var(--marca); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+}
+
+/* impressão / PDF: só a fatura explicável, igual à tela */
+@media print {
+  @page { margin: 16mm; }
+  body, .app { background: #fff; }
+  .app, .grade, .pilha { display: block; }
+  .lateral, .cabecalho, .bloco, .projecao, .aviso.neutro, .botao { display: none !important; }
+  .conteudo { padding: 0; max-width: none; }
+  .fatura { border: 0; box-shadow: none; padding: 0; break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
