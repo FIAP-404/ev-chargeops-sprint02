@@ -18,6 +18,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models as m
@@ -93,7 +94,7 @@ def processar(db: Session, carregador_id: str, frame) -> list | None:
     except ErroOCPP as erro:
         return [4, id_mensagem, erro.codigo, str(erro), {}]
     except ErroSessao as erro:
-        # regra de negócio recusou um valor (ex.: leitura do medidor andando para trás)
+        # regra de negócio recusou um valor (ex.: meterStart abaixo do fim da sessão anterior)
         return [4, id_mensagem, "PropertyConstraintViolation", str(erro), {}]
     except Exception:
         db.rollback()
@@ -211,6 +212,10 @@ def _meter_values(db: Session, carregador_id: str, payload: dict) -> dict:
     return {}
 
 
+def _ultimo_evento(db: Session, sessao: m.SessaoRecarga) -> datetime:
+    return db.scalar(select(func.max(m.EventoSessao.timestamp)).where(m.EventoSessao.sessao_id == sessao.id))
+
+
 def _status_notification(db: Session, carregador_id: str, payload: dict) -> dict:
     _campo(payload, "connectorId")
     _campo(payload, "errorCode")
@@ -218,7 +223,9 @@ def _status_notification(db: Session, carregador_id: str, payload: dict) -> dict
     sessao = sessao_aberta_do_carregador(db, carregador_id)
     if status is None or sessao is None:
         return {}
-    quando = _data(payload["timestamp"]) if payload.get("timestamp") else datetime.now()
+    # o timestamp é opcional; sem ele usamos o último evento da sessão, e não o
+    # relógio do servidor, que pode estar à frente do relógio do carregador
+    quando = _data(payload["timestamp"]) if payload.get("timestamp") is not None else _ultimo_evento(db, sessao)
     # não traz leitura do medidor: repete a última para só marcar o novo status
     registrar_telemetria(db, sessao.id, quando, 0.0, sessao.leitura_final_kwh, status_carregador=status)
     return {}
@@ -234,6 +241,18 @@ def _stop_transaction(db: Session, carregador_id: str, payload: dict) -> dict:
         # já encerrada ou inexistente (inclui transactionId 0): o carregador reenvia
         # o Stop até receber resposta, então confirmamos sem fazer nada
         return {}
+
+    # Um Stop recusado deixaria a sessão aberta para sempre (o carregador desiste
+    # depois de algumas tentativas). Então a sessão sempre fecha: hora antes da
+    # última telemetria vira a hora dela, e medidor abaixo da última leitura cai
+    # na reconciliação do domínio (usa o último dado válido).
+    ultimo = _ultimo_evento(db, sessao)
+    if fim_em < ultimo:
+        log.warning("StopTransaction %s com hora anterior à última telemetria; usando %s", sessao.id, ultimo)
+        fim_em = ultimo
+    if leitura_final < sessao.leitura_final_kwh:
+        log.warning("StopTransaction %s com meterStop abaixo da última leitura; reconciliando", sessao.id)
+        leitura_final = None
     encerrar_sessao(db, sessao.id, motivo, fim_em, leitura_final)
     return {}
 

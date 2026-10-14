@@ -1,5 +1,6 @@
 """Testes do adaptador OCPP 1.6J com mensagens montadas à mão (não é um carregador real)."""
 import json
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from app import models as m
 from app.database import get_db
 from app.integracoes.ocpp16 import processar, processar_texto
 from app.main import app
+from app.sessoes import para_hora_local
 
 CARREGADOR = "goodwe_hca_g2_l1"
 TAG = "RFID-A1204-01"
@@ -66,6 +68,10 @@ def test_ciclo_completo_ocpp(db):
     assert sessao.status_cobranca == "liberada"
     assert sessao.metodo_identificacao == "rfid"
     assert sessao.minutos_ociosos == pytest.approx(30)
+
+
+def utc(hora, minuto):
+    return para_hora_local(datetime(2026, 8, 3, hora, minuto, tzinfo=timezone.utc))
 
 
 def test_meter_values_converte_wh_e_w(db):
@@ -131,12 +137,43 @@ def test_data_invalida_responde_type_constraint(db):
 
 
 def test_regra_da_sessao_responde_property_constraint(db):
+    parar(db, iniciar(db), 1006200)
+    # meterStart abaixo do fim da sessão anterior: o domínio recusa (422)
+    r = chamar(db, "StartTransaction", {
+        "connectorId": 1, "idTag": TAG, "meterStart": 1000000, "timestamp": "2026-08-04T08:00:00Z",
+    })
+    assert r[:3] == [4, "1", "PropertyConstraintViolation"]
+
+
+def test_stop_com_medidor_abaixo_da_ultima_leitura_fecha_e_libera_o_carregador(db):
     transacao = iniciar(db)
     medir(db, transacao, "2026-08-03T20:10:00Z", 1006200)
-    # medidor no Stop menor que a última telemetria: o domínio recusa (422)
-    r = parar(db, transacao, 1003000)
-    assert r[:3] == [4, "1", "PropertyConstraintViolation"]
-    assert db.get(m.SessaoRecarga, transacao).status_final == "em_andamento"
+    assert parar(db, transacao, 1003000) == [3, "1", {}]
+    sessao = db.get(m.SessaoRecarga, transacao)
+    assert sessao.status_final != "em_andamento"
+    assert sessao.leitura_final_kwh == pytest.approx(1006.2)  # último dado válido
+    proxima = chamar(db, "StartTransaction", {
+        "connectorId": 1, "idTag": TAG, "meterStart": 1006200, "timestamp": "2026-08-04T08:00:00Z",
+    })
+    assert proxima[2]["idTagInfo"]["status"] == "Accepted"
+
+
+def test_stop_antes_da_ultima_telemetria_fecha_na_hora_dela(db):
+    transacao = iniciar(db)
+    medir(db, transacao, "2026-08-03T21:30:00Z", 1006200)
+    assert parar(db, transacao, 1006200, quando="2026-08-03T21:00:00Z") == [3, "1", {}]
+    sessao = db.get(m.SessaoRecarga, transacao)
+    assert sessao.fim_em == utc(21, 30)
+    assert sessao.kwh_entregue == pytest.approx(6.2)
+
+
+def test_status_sem_timestamp_nao_usa_o_relogio_do_servidor(db):
+    transacao = iniciar(db)
+    chamar(db, "StatusNotification", {"connectorId": 1, "errorCode": "NoError", "status": "SuspendedEV"})
+    assert parar(db, transacao, 1006200, quando="2026-08-03T21:00:00Z") == [3, "1", {}]
+    sessao = db.get(m.SessaoRecarga, transacao)
+    assert sessao.carga_completa_em == utc(19, 10)
+    assert sessao.fim_em == utc(21, 0)
 
 
 def test_stop_de_transacao_inexistente_responde_vazio(db):
