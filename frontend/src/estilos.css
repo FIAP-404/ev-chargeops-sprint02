@@ -333,6 +333,14 @@ tr.selecionada td:first-child { box-shadow: inset 3px 0 0 var(--marca); }
 .alerta .msg { color: var(--tinta-2); font-size: 0.84rem; }
 .alerta .botao { grid-column: 2; justify-self: start; }
 
+/* caixa de avisos do morador: não lido marcado com a cor da marca */
+.avisos-lista { list-style: none; margin: 0; padding: 0; }
+.avisos-lista li { display: grid; gap: 6px; padding: 14px 0; border-top: 1px solid var(--linha); }
+.avisos-lista li:first-child { border-top: 0; }
+.avisos-lista li.nao-lida { border-left: 3px solid var(--marca); padding-left: 10px; }
+.avisos-lista .msg { color: var(--tinta-2); font-size: 0.84rem; }
+.avisos-lista .botao { justify-self: start; }
+
 /* ---------- fatura explicável (o elemento de destaque) ----------
    Card no padrão dos demais; o ar de conta vem do conteúdo: linhas
    pontilhadas até o valor, leituras entre tracejados e o total em destaque. */

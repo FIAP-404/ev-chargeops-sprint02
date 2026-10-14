@@ -1,5 +1,6 @@
 """Gera as capturas de tela de evidência (docs/evidencias/*.png), a fatura em
-PDF (07-fatura.pdf) e o CSV do mês exportado pela tela de faturas.
+PDF (07-fatura.pdf), a caixa de avisos do morador (08-avisos-morador.png) e o
+CSV do mês exportado pela tela de faturas.
 
 Pré-requisitos: API em http://localhost:8000 e front-end em http://localhost:5173
 rodando sobre o banco do simulador.
@@ -34,6 +35,14 @@ def main(largura: int = 1440) -> None:
             pagina.wait_for_timeout(1200)  # gráficos terminam de desenhar
             pagina.screenshot(path=PASTA / f"{nome}.png", full_page=True)
             print("ok", nome)
+
+        # caixa de avisos do morador (resumo das recargas e ociosidade)
+        pagina.goto(f"{URL}/#/morador")
+        avisos = pagina.locator("section[aria-labelledby='t-avisos']")
+        avisos.locator("li").first.wait_for()
+        pagina.wait_for_timeout(500)
+        avisos.screenshot(path=PASTA / "08-avisos-morador.png")
+        print("ok 08-avisos-morador")
 
         # fatura impressa em PDF (regras de @media print) e CSV do mês para a administradora
         pagina.goto(f"{URL}/#/faturas")

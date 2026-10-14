@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useApi } from "../api";
+import { api, useApi } from "../api";
 import FaturaExplicavel from "../componentes/FaturaExplicavel";
 import { StatusCobranca, textoStatusFinal } from "../componentes/Status";
 import { brl, dataHora, duracao, kwh, nomeMes, nomeMesTitulo } from "../formatos";
@@ -22,7 +22,14 @@ export default function AreaMorador() {
   }, [usuarios.dados, usuarioId]);
 
   const painel = useApi(usuarioId ? `/usuarios/${usuarioId}/painel` : null);
+  const avisos = useApi(usuarioId ? `/usuarios/${usuarioId}/notificacoes` : null);
   useEffect(() => setFaturaAberta(null), [usuarioId]);
+
+  async function marcarComoLida(aviso) {
+    await api(`/notificacoes/${aviso.id}/lida`, { metodo: "POST" });
+    avisos.recarregar();
+    painel.recarregar();
+  }
 
   if (usuarios.erro) return <ErroApi erro={usuarios.erro} />;
   const moradores = (usuarios.dados ?? []).filter((u) => u.unidade);
@@ -52,6 +59,36 @@ export default function AreaMorador() {
       ) : (
         <div className="grade grade-3-2">
           <div className="pilha">
+            <section className="bloco" aria-labelledby="t-avisos">
+              <header>
+                <h2 id="t-avisos">Avisos</h2>
+                {p.notificacoes_nao_lidas > 0 && (
+                  <span className="selo atencao">
+                    {p.notificacoes_nao_lidas} {p.notificacoes_nao_lidas === 1 ? "não lido" : "não lidos"}
+                  </span>
+                )}
+              </header>
+              {!avisos.dados?.length ? (
+                <p className="vazio">Nenhum aviso.</p>
+              ) : (
+                <ul className="avisos-lista">
+                  {avisos.dados.map((a) => (
+                    <li key={a.id} className={a.lida ? "" : "nao-lida"}>
+                      <div>
+                        <strong>{a.titulo}</strong> <span className="mudo">{dataHora(a.criado_em)}</span>
+                      </div>
+                      <p className="msg">{a.mensagem}</p>
+                      {!a.lida && (
+                        <button className="botao secundario" onClick={() => marcarComoLida(a)}>
+                          Marcar como lida
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
             {p.projecao_ia && (
               <section className="projecao" aria-labelledby="t-proj">
                 <h2 id="t-proj" style={{ marginBottom: 6 }}>Previsão para o fechamento de {nomeMes(p.mes).split(" ")[0]}</h2>
