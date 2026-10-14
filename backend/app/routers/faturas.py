@@ -1,6 +1,7 @@
 """Rotas de faturamento, cadastro e parâmetros de rateio."""
 import csv
 import io
+import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,9 +13,11 @@ from app import models as m
 from app import schemas
 from app.database import get_db
 from app.faturamento import gerar_faturas, obter_parametros
+from app.ia import servico as ia
 from app.serializacao import fatura_dict, parametros_dict
 
 router = APIRouter(tags=["Faturas e cadastro"])
+log = logging.getLogger("evchargeops.ia")
 
 
 @router.post("/faturas/gerar")
@@ -23,6 +26,14 @@ def gerar(mes: str, db: Session = Depends(get_db)):
         faturas = gerar_faturas(db, mes)
     except ValueError as erro:
         raise HTTPException(400, str(erro)) from erro
+    # fechou o mês: os modelos aprendem com as sessões que acabaram de ser liberadas/faturadas.
+    # Fica aqui e não em gerar_faturas() porque o simulador retreina com o relógio simulado.
+    try:
+        ia.treinar_modelos(db)
+        ia.atualizar_alertas_capacidade(db)
+    except Exception:  # a fatura já foi gerada; o retreino tenta de novo no próximo mês
+        db.rollback()
+        log.exception("retreino da IA após gerar as faturas falhou")
     return [fatura_dict(f) for f in faturas]
 
 
