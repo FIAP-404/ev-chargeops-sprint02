@@ -352,10 +352,16 @@ das decisões do gestor (descartar, liberar com crédito ou liberar sem ajuste),
 de revisão: são os rótulos para medir quantas retenções eram mesmo problema e recalibrar o corte.
 """)
 
+# ids pela posição, sem horários de execução e com fim de linha LF: regerar sem
+# mudar o conteúdo não muda o arquivo (o diff mostra só o que mudou de fato)
+for i, celula in enumerate(celulas):
+    celula["id"] = f"celula-{i:02d}"
 nb = nbf.v4.new_notebook()
 nb["cells"] = celulas
 nb["metadata"]["kernelspec"] = {"name": "python3", "display_name": "Python 3", "language": "python"}
 DESTINO.parent.mkdir(exist_ok=True)
-NotebookClient(nb, timeout=600, kernel_name="python3", resources={"metadata": {"path": str(DESTINO.parent)}}).execute()
-nbf.write(nb, DESTINO)
+NotebookClient(nb, timeout=600, kernel_name="python3", record_timing=False,
+               resources={"metadata": {"path": str(DESTINO.parent)}}).execute()
+with open(DESTINO, "w", encoding="utf-8", newline="\n") as arquivo:
+    arquivo.write(nbf.writes(nb) + "\n")
 print("notebook salvo em", DESTINO)
