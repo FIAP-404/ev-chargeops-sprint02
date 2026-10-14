@@ -22,7 +22,7 @@
 
 ## 1. O que foi implementado
 
-A Sprint 01 terminou com um plano de oito itens para a Sprint 02. O protótipo entrega todos eles:
+A Sprint 01 definiu o plano de desenvolvimento da Sprint 02. A tabela resume os componentes implementados e a preparação do pitch; a validação presencial continua sendo uma etapa separada:
 
 | Plano da Sprint 01 | Onde está | Situação |
 |---|---|---|
@@ -332,3 +332,7 @@ docs/
   roteiro-pitch.md      roteiro do vídeo de 5 minutos
 scripts/                geração do notebook e das capturas
 ```
+
+## Conferência da entrega
+
+O código, README, evidências e `entrega.txt` estão versionados. A conferência técnica e as pendências de grupo, acesso do avaliador e validação presencial estão em [`docs/conferencia-entrega.md`](docs/conferencia-entrega.md). A publicação no GitHub não comprova a submissão no portal.
