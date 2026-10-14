@@ -106,12 +106,15 @@ class PrevisorDemanda:
         # backtest: treina sem as últimas 4 semanas e compara com o que aconteceu
         corte = n_semanas - SEMANAS_BACKTEST
         treino, teste = df[df["semana"] < corte], df[df["semana"] >= corte]
+        semanal_real = teste.groupby("semana")["chegadas"].sum().to_numpy()
+        if (semanal_real == 0).any():
+            # base rala demais (ex.: poucas sessões em 8 semanas): o erro semanal em % nem existe
+            return {"treinado": False, "motivo": "semana sem nenhuma chegada no período de teste"}
         modelo_bt = self._novo_modelo().fit(_matriz(treino), treino["chegadas"])
         prev = modelo_bt.predict(_matriz(teste))
         # baseline ingênuo: média histórica do mesmo dia/hora (sem tendência)
         base = treino.groupby(["dia", "hora"])["chegadas"].mean()
         prev_base = teste.set_index(["dia", "hora"]).index.map(base).to_numpy()
-        semanal_real = teste.groupby("semana")["chegadas"].sum().to_numpy()
         semanal_prev = pd.Series(prev, index=teste.index).groupby(teste["semana"]).sum().to_numpy()
         semanal_base = pd.Series(prev_base, index=teste.index).groupby(teste["semana"]).sum().to_numpy()
         self.metricas = {
