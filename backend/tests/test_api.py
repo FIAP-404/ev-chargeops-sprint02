@@ -1,4 +1,7 @@
 """Teste de ponta a ponta pela API HTTP (o caminho que o carregador/gateway usaria)."""
+import csv
+import io
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -116,3 +119,39 @@ def test_relatorio_por_carregador(cliente, db):
     assert [por["goodwe_hca_g2_l1"]["tentativas_ocupado"], por["teste_l2"]["tentativas_ocupado"]] == [0, 1]
     assert sum(c["kwh"] for c in por.values()) == pytest.approx(resumo["kpis"]["kwh"])
     assert all(c["valor_sessoes"] > 0 for c in por.values())
+
+
+CABECALHO_CSV = [
+    "unidade", "mes", "qtd_sessoes", "kwh_total", "energia", "perdas", "infra",
+    "ociosidade", "ajustes", "total", "status", "sessoes_pendentes",
+]
+
+
+def test_exportar_csv_do_mes(cliente):
+    r = cliente.post("/sessoes/iniciar", json={
+        "codigo_rfid": "RFID-A1204-01", "inicio_em": "2026-08-03T19:10:00", "leitura_inicial_kwh": 1000,
+    })
+    _telemetria_e_encerrar(cliente, r.json()["id"], [1006.2, 1012.4, 1018.6], "2026-08-03T22:40:00")
+    cliente.post("/faturas/gerar", params={"mes": "2026-08"})
+
+    r = cliente.get("/faturas/exportar.csv", params={"mes": "2026-08"})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/csv")
+    assert r.content.startswith(b"\xef\xbb\xbf")  # BOM: o Excel abre com acentos
+    linhas = list(csv.reader(io.StringIO(r.content.decode("utf-8-sig")), delimiter=";"))
+    assert linhas[0] == CABECALHO_CSV
+    assert len(linhas) - 1 == len(cliente.get("/unidades").json())
+
+    # o total de cada unidade é o mesmo da tela, com vírgula decimal
+    faturas = {f["unidade"]: f for f in cliente.get("/faturas", params={"mes": "2026-08"}).json()}
+    for linha in linhas[1:]:
+        assert float(linha[9].replace(",", ".")) == pytest.approx(faturas[linha[0]]["valor_total"])
+    a1204 = next(linha for linha in linhas if linha[0] == "A-1204")
+    assert a1204[3] == "18,600" and a1204[9] == "38,55"
+
+
+def test_exportar_csv_mes_invalido_ou_vazio(cliente):
+    # 400 (e não 422) também prova que a rota vem antes de /faturas/{fatura_id}
+    assert cliente.get("/faturas/exportar.csv", params={"mes": "2026-13"}).status_code == 400
+    assert cliente.get("/faturas/exportar.csv", params={"mes": "agosto"}).status_code == 400
+    assert cliente.get("/faturas/exportar.csv", params={"mes": "2025-01"}).status_code == 404

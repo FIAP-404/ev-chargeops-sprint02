@@ -1,5 +1,10 @@
 """Rotas de faturamento, cadastro e parâmetros de rateio."""
+import csv
+import io
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -29,6 +34,45 @@ def listar(mes: str | None = None, unidade_id: int | None = None, db: Session = 
     if unidade_id:
         q = q.where(m.Fatura.unidade_id == unidade_id)
     return [fatura_dict(f) for f in db.scalars(q)]
+
+
+def _num(valor: float, casas: int = 2) -> str:
+    """Número no padrão brasileiro (vírgula decimal), para o Excel abrir certo."""
+    return f"{valor:.{casas}f}".replace(".", ",")
+
+
+# antes de /faturas/{fatura_id}: senão o Starlette casa {fatura_id} e devolve 422
+@router.get("/faturas/exportar.csv")
+def exportar_csv(mes: str, db: Session = Depends(get_db)):
+    """Faturas do mês em CSV, para a administradora lançar no boleto do condomínio."""
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes):
+        raise HTTPException(400, "mes deve estar no formato AAAA-MM")
+    faturas = db.scalars(
+        select(m.Fatura).join(m.Unidade).where(m.Fatura.mes_referencia == mes)
+        .order_by(m.Unidade.bloco, m.Unidade.numero)
+    ).all()
+    if not faturas:
+        raise HTTPException(404, "Nenhuma fatura gerada para este mês")
+
+    buf = io.StringIO()
+    escritor = csv.writer(buf, delimiter=";", lineterminator="\r\n")
+    escritor.writerow([
+        "unidade", "mes", "qtd_sessoes", "kwh_total", "energia", "perdas", "infra",
+        "ociosidade", "ajustes", "total", "status", "sessoes_pendentes",
+    ])
+    for f in faturas:
+        # ajustes vai positivo: é o crédito já abatido do total, como na tela
+        escritor.writerow([
+            f.unidade.rotulo, f.mes_referencia, f.qtd_sessoes, _num(f.kwh_total, 3),
+            _num(f.valor_energia), _num(f.valor_perdas), _num(f.valor_infra), _num(f.valor_ociosidade),
+            _num(f.ajustes), _num(f.valor_total), f.status, f.sessoes_pendentes,
+        ])
+    # utf-8-sig: com o BOM o Excel reconhece os acentos
+    return Response(
+        buf.getvalue().encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="faturas-{mes}.csv"'},
+    )
 
 
 @router.get("/faturas/{fatura_id}")
