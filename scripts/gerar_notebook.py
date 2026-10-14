@@ -2,7 +2,7 @@
 
 O notebook fica salvo COM as saídas, como evidência de funcionamento.
     python scripts/gerar_notebook.py
-Pré-requisito: ter rodado o simulador (python -m simulador.gerar_sessoes) na pasta backend.
+Pré-requisito: ter rodado o simulador (python -m simulador.gerar_sessoes --ate 2026-10-13T15:00) na pasta backend.
 """
 from pathlib import Path
 
@@ -28,7 +28,7 @@ sobre o banco gerado pelo simulador e responde quatro perguntas:
 3. A previsão de demanda erra menos que uma média histórica simples?
 4. A projeção da fatura do mês (mostrada ao morador) é confiável?
 
-Para reexecutar: rode o simulador (`cd backend && python -m simulador.gerar_sessoes`) e depois
+Para reexecutar: rode o simulador (`cd backend && python -m simulador.gerar_sessoes --ate 2026-10-13T15:00`) e depois
 `python scripts/gerar_notebook.py` na raiz do repositório.
 """)
 
