@@ -1,11 +1,15 @@
 """Gera as capturas de tela de evidência (docs/evidencias/01 a 06 .png), a fatura em
 PDF (07-fatura.pdf), a caixa de avisos do morador (08-avisos-morador.png), o
-consumo por carregador do painel do gestor (09-consumo-por-carregador.png) e o
-CSV do mês exportado pela tela de faturas (faturas-AAAA-MM.csv).
+consumo por carregador do painel do gestor (09-consumo-por-carregador.png), a
+recarga iniciada pelo app (10-simular-qr.png) e o CSV do mês exportado pela tela
+de faturas (faturas-AAAA-MM.csv).
 
 Pré-requisitos: API e front-end rodando sobre o banco do simulador
 (python -m simulador.gerar_sessoes --ate 2026-10-13T15:00). O front-end é lido
 em http://localhost:5173; para outro endereço, defina EVCO_FRONT_URL.
+As duas recargas simuladas gravam no banco, por isso rodam depois das telas que
+mostram os dados (a do app, com a Marina, por último). Para voltar ao cenário
+publicado, rode o simulador de novo.
     pip install playwright && python -m playwright install chromium
     python scripts/capturar_evidencias.py
 """
@@ -80,8 +84,23 @@ def main(largura: int = 1440) -> None:
         celular.goto(f"{URL}/#/morador")
         celular.get_by_text("Recargas do mês").first.wait_for()
         celular.wait_for_timeout(800)
-        celular.screenshot(path=PASTA / "06-area-morador-celular.png", full_page=True)
+        celular.screenshot(path=PASTA / "06-area-morador-celular.png")  # só a primeira tela, como no aparelho
         print("ok 06-area-morador-celular")
+
+        # recarga iniciada pelo app (QR Code): Marina, BYD Dolphin, recarga normal liberada
+        pagina.goto(f"{URL}/#/simular")
+        pagina.reload()  # mesma rota da simulação anterior: recarrega para limpar o resultado
+        pagina.get_by_label("App (QR Code)").check()
+        morador = pagina.get_by_label("Morador (app)")
+        morador.select_option(morador.locator("option", has_text="A-1204").first.get_attribute("value"))
+        veiculo = pagina.get_by_role("combobox", name="Veículo")
+        veiculo.select_option(veiculo.locator("option", has_text="BYD Dolphin").first.get_attribute("value"))
+        pagina.get_by_label("Situação").select_option("normal")
+        pagina.get_by_role("button", name="Ler QR Code e iniciar recarga").click()
+        pagina.get_by_text("Liberada para o rateio").wait_for(timeout=60000)
+        pagina.wait_for_timeout(500)
+        pagina.screenshot(path=PASTA / "10-simular-qr.png", full_page=True)
+        print("ok 10-simular-qr")
         nav.close()
 
 
