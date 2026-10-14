@@ -33,7 +33,7 @@ from sqlalchemy import event, select, update
 
 from app import models as m
 from app.database import Base, SessionLocal, engine
-from app.faturamento import gerar_faturas
+from app.faturamento import gerar_faturas, valor_da_sessao
 from app.ia import servico as ia
 from app.seed import CADASTRO, CARREGADOR_ID, QR_TOKEN_CARREGADOR, popular_cadastro
 from app.sessoes import (
@@ -312,8 +312,10 @@ def revisar_pendencias_do_gestor(db, mes: str, rng: random.Random, agora: dateti
         elif codigos & {"kwh_acima_da_bateria", "conectado_sem_carregar"}:
             revisar_sessao(db, s.id, "descartar", observacao="erro de medição confirmado", agora=agora)
         elif "falha_equipamento" in codigos:
-            revisar_sessao(db, s.id, "liberar", ajuste_valor=5.0, observacao="falha confirmada, crédito de R$ 5",
-                           agora=agora)
+            # R$ 5 de crédito, limitado ao valor da sessão (uma falha logo no início vale menos que isso)
+            credito = min(5.0, valor_da_sessao(db, s))
+            revisar_sessao(db, s.id, "liberar", ajuste_valor=credito,
+                           observacao=f"falha confirmada, crédito de R$ {credito:.2f}".replace(".", ","), agora=agora)
         else:
             revisar_sessao(db, s.id, "liberar", observacao="leitura conferida", agora=agora)
 
