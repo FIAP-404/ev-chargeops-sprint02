@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import SessionLocal, criar_tabelas
-from app.routers import faturas, ia, notificacoes, ocpp, painel, sessoes
+from app.routers import faturas, ia, integracoes, notificacoes, ocpp, painel, sessoes
 from app.seed import popular_cadastro
 
 # mostra no console da API os avisos do EnviadorConsole (app/notificacoes.py)
@@ -47,6 +47,7 @@ app.include_router(faturas.router)
 app.include_router(painel.router)
 app.include_router(ia.router)
 app.include_router(notificacoes.router)
+app.include_router(integracoes.router)
 app.include_router(ocpp.router)
 
 

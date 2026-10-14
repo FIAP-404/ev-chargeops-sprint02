@@ -9,6 +9,9 @@ caminho de integração:
 
     SEMS (telemetria do HCA G2)  ->  normalizar_leitura()  ->  registrar_telemetria()
 
+sincronizar_sems() faz esse caminho uma vez e é chamada pela rota
+POST /integracoes/sems/sincronizar quando as credenciais estão configuradas.
+
 A identificação do usuário continua vindo do RFID/app (iniciar_sessao), que é
 o fallback "registro próprio" definido na Sprint 01.
 
@@ -26,6 +29,9 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import httpx
+from sqlalchemy.orm import Session
+
+from app.sessoes import registrar_telemetria, sessao_aberta_do_carregador
 
 URL_LOGIN = "https://www.semsportal.com/api/v2/Common/CrossLogin"
 TOKEN_INICIAL = {"version": "v2.1.0", "client": "web", "language": "en"}
@@ -141,3 +147,19 @@ class ClienteSEMS:
         if equipamento is None:
             raise RuntimeError("Nenhum EV Charger encontrado na planta")
         return normalizar_leitura(equipamento)
+
+
+def sincronizar_sems(db: Session, cliente: ClienteSEMS, planta_id: str, carregador_id: str) -> dict:
+    """Lê o carregador no SEMS e, se houver sessão aberta nele, grava a leitura como telemetria."""
+    leitura = cliente.leitura_carregador(planta_id)
+    sessao = sessao_aberta_do_carregador(db, carregador_id)
+    if sessao is not None:
+        registrar_telemetria(
+            db, sessao.id, leitura.timestamp, leitura.potencia_kw, leitura.energia_acumulada_kwh, leitura.status
+        )
+    return {
+        "sessao_id": sessao.id if sessao is not None else None,
+        "potencia_kw": leitura.potencia_kw,
+        "energia_acumulada_kwh": leitura.energia_acumulada_kwh,
+        "status": leitura.status,
+    }
