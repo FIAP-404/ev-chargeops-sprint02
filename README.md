@@ -235,11 +235,31 @@ Combina o ritmo de consumo do mês atual com a média das últimas 8 semanas. O 
 | Regras de rateio | [`docs/evidencias/05-regras-rateio.png`](docs/evidencias/05-regras-rateio.png) |
 | Área do morador no celular | [`docs/evidencias/06-area-morador-celular.png`](docs/evidencias/06-area-morador-celular.png) |
 
-As capturas são geradas por `scripts/capturar_evidencias.py`, que usa Playwright com a API e o front-end rodando.
+As capturas são geradas por `scripts/capturar_evidencias.py`, que usa Playwright com a API e o front-end rodando, sobre o cenário do simulador (`--ate 2026-10-13T15:00`, seed 42).
+
+**Painel do gestor.** Decisões pendentes com o motivo de cada retenção (selo "Regra" ou "IA"), o crédito limitado ao valor da sessão, a capacidade prevista e o consumo do mês.
 
 ![Painel do gestor](docs/evidencias/01-painel-gestor.png)
 
+**Faturas.** Rateio de todas as unidades no mês e, ao lado, a fatura explicável com a regra de cada parcela.
+
+![Faturas por unidade](docs/evidencias/02-faturas.png)
+
+**Área do morador.** Previsão da IA para o fechamento do mês, recargas, faturas anteriores e a prévia da fatura.
+
 ![Área do morador](docs/evidencias/03-area-morador.png)
+
+**Simular recarga.** Uma recarga com cabo defeituoso enviada pela API; a IA retém a cobrança e explica o motivo.
+
+![Recarga simulada retida pela IA](docs/evidencias/04-simular-recarga.png)
+
+**Regras de rateio.** Parâmetros aprovados pelo condomínio, com o exemplo de 42 kWh recalculado ao vivo.
+
+![Regras de rateio](docs/evidencias/05-regras-rateio.png)
+
+**Área do morador no celular.**
+
+<img src="docs/evidencias/06-area-morador-celular.png" alt="Área do morador no celular" width="320">
 
 ## 7. Decisões técnicas
 
