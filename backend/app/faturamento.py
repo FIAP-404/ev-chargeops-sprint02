@@ -48,9 +48,10 @@ def parametros_calculo(p: m.ParametrosRateio) -> ParametrosCalculo:
     )
 
 
-def _parametros_do_mes(db: Session, mes: str) -> ParametrosCalculo:
-    """Parâmetros guardados na fatura do mês, para que regerar não reprecifique o
-    que já foi cobrado. Mês sem fatura (ou fatura anterior a essa cópia): os atuais."""
+def parametros_do_mes(db: Session, mes: str) -> ParametrosCalculo:
+    """Parâmetros guardados na fatura do mês, para que regerar (ou somar uma sessão
+    liberada depois do fechamento) não reprecifique o mês já cobrado. Mês sem
+    fatura (ou fatura anterior a essa cópia): os atuais."""
     fatura = db.scalar(select(m.Fatura).where(m.Fatura.mes_referencia == mes).order_by(m.Fatura.id).limit(1))
     guardados = json.loads(fatura.memoria_calculo).get("parametros") if fatura else None
     return ParametrosCalculo(**guardados) if guardados else parametros_calculo(obter_parametros(db))
@@ -69,14 +70,18 @@ def marcar_fatura_desatualizada(db: Session, sessao: m.SessaoRecarga) -> None:
         fatura.status = "desatualizada"
 
 
-def valor_da_sessao(db: Session, sessao: m.SessaoRecarga) -> float:
+def valor_da_sessao(db: Session, sessao: m.SessaoRecarga, params: ParametrosCalculo | None = None) -> float:
     """Quanto a sessão soma à fatura antes de créditos: energia + perdas + ociosidade.
 
-    Usa o mesmo motor de rateio da fatura. A taxa de infraestrutura fica de fora
-    porque é mensal e por unidade, não da sessão. É o teto do crédito do gestor.
+    Usa o mesmo motor e os mesmos parâmetros da fatura do mês em que a sessão
+    começou (os guardados, se o mês já foi faturado). A taxa de infraestrutura
+    fica de fora porque é mensal e por unidade, não da sessão. É o teto do
+    crédito do gestor. params evita reler a fatura quando o mês já é conhecido.
     """
+    if params is None:
+        params = parametros_do_mes(db, sessao.inicio_em.strftime("%Y-%m"))
     base = SessaoRateio(sessao_id=sessao.id, kwh=sessao.kwh_entregue or 0.0, minutos_ociosos=sessao.minutos_ociosos or 0.0)
-    r = calcular_rateio([base], parametros_calculo(obter_parametros(db)))
+    r = calcular_rateio([base], params)
     return float(r.valor_total - r.valor_infra)
 
 
@@ -113,7 +118,7 @@ def calcular_unidade(db: Session, unidade_id: int, mes: str) -> dict:
     """Prévia da fatura (não grava nada). Usada na área do usuário durante o mês."""
     sessoes = _sessoes_da_unidade(db, unidade_id, mes, (m.COBRANCA_LIBERADA, m.COBRANCA_FATURADA))
     pendentes = _sessoes_da_unidade(db, unidade_id, mes, PENDENTES)
-    resultado = calcular_rateio(_para_rateio(sessoes), _parametros_do_mes(db, mes))
+    resultado = calcular_rateio(_para_rateio(sessoes), parametros_do_mes(db, mes))
     dados = resultado.como_dict()
     dados["sessoes_ids"] = [s.id for s in sessoes]
     dados["sessoes_pendentes"] = [s.id for s in pendentes]
@@ -127,7 +132,7 @@ def gerar_faturas(db: Session, mes: str) -> list[m.Fatura]:
     sessoes_pendentes e, quando forem liberadas ou encerradas, basta gerar de novo.
     Regerar usa os parâmetros guardados na primeira geração do mês.
     """
-    params = _parametros_do_mes(db, mes)
+    params = parametros_do_mes(db, mes)
     faturas = []
     agora = datetime.now()
     for unidade in db.scalars(select(m.Unidade).order_by(m.Unidade.bloco, m.Unidade.numero)):

@@ -6,12 +6,12 @@ from fastapi.testclient import TestClient
 
 from app import models as m
 from app.database import get_db
-from app.faturamento import calcular_unidade, gerar_faturas
+from app.faturamento import calcular_unidade, gerar_faturas, valor_da_sessao
 from app.main import app
 from app.seed import CARREGADOR_ID
 from app.sessoes import ErroSessao, encerrar_sessao, iniciar_sessao, registrar_telemetria, revisar_sessao
 
-from .test_fluxo_sessao import T0, recarga
+from .test_fluxo_sessao import T0, avisos, recarga, usuario
 
 
 @pytest.fixture
@@ -65,6 +65,27 @@ def test_regerar_mes_mantem_parametros_da_fatura(db):
     db.commit()
     assert _fatura(db, "2026-08").valor_total == pytest.approx(38.55)
     assert calcular_unidade(db, f.unidade_id, "2026-08")["valor_total"] == pytest.approx(38.55)
+
+
+def test_sessao_atribuida_depois_do_fechamento_usa_parametros_do_mes(cliente, db):
+    s = recarga(db, "CARTAO-NAO-CADASTRADO", 5)
+    gerar_faturas(db, "2026-08")
+    db.get(m.ParametrosRateio, 1).tarifa_kwh = 2.00
+    db.commit()
+
+    # 5 kWh × R$ 0,95 (tarifa da fatura de agosto) + 5% de perdas = R$ 4,99, e não R$ 10,50
+    assert valor_da_sessao(db, s) == pytest.approx(4.99)
+    [retida] = cliente.get("/dashboard/resumo", params={"mes": "2026-08"}).json()["sessoes_retidas"]
+    assert retida["valor_sessao"] == pytest.approx(4.99)
+    rafael = usuario(db, "rafael.a302@exemplo.com")
+    with pytest.raises(ErroSessao, match="valor da sessão"):
+        revisar_sessao(db, s.id, "liberar", ajuste_valor=5.00, usuario_id=rafael.id)
+
+    revisar_sessao(db, s.id, "liberar", usuario_id=rafael.id, observacao="visitante do A-302")
+    [aviso] = avisos(db, s.id)
+    assert "R$ 4,99" in aviso.mensagem
+    f = _fatura(db, "2026-08", "A-302")
+    assert f.valor_total - f.valor_infra == pytest.approx(4.99)
 
 
 def test_encerrar_com_fuso_z_e_menos_tres(cliente):

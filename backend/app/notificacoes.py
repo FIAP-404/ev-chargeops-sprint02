@@ -17,7 +17,7 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from app import models as m
-from app.faturamento import obter_parametros, parametros_calculo, valor_da_sessao
+from app.faturamento import parametros_do_mes, valor_da_sessao
 from app.ia.anomalias import br
 from app.rateio import SessaoRateio, calcular_rateio
 
@@ -113,7 +113,7 @@ def notificar_resumo_sessao(db: Session, sessao: m.SessaoRecarga, motivos: list[
 
 def notificar_ociosidade(db: Session, sessao: m.SessaoRecarga, quando: datetime) -> m.Notificacao:
     """Aviso extra quando o carro ficou muito tempo na vaga depois da carga completa."""
-    params = parametros_calculo(obter_parametros(db))
+    params = parametros_do_mes(db, sessao.inicio_em.strftime("%Y-%m"))
     mensagem = f"Seu veículo ficou {br(sessao.minutos_ociosos / 60)} h conectado depois da carga completa. "
     if params.ociosidade_ativa:
         r = calcular_rateio(

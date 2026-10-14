@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app.database import get_db
-from app.faturamento import calcular_unidade, limites_do_mes, obter_parametros, parametros_calculo, valor_da_sessao
+from app.faturamento import calcular_unidade, limites_do_mes, parametros_do_mes, valor_da_sessao
 from app.ia import servico as ia
 from app.rateio import SessaoRateio, calcular_rateio
 from app.serializacao import fatura_dict, sessao_dict
@@ -22,10 +22,11 @@ def mes_corrente() -> str:
     return datetime.now().strftime("%Y-%m")
 
 
-def _consumo_por_carregador(db: Session, sessoes, validas, tentativas, horas_no_mes: float) -> list[dict]:
+def _consumo_por_carregador(db: Session, mes: str, sessoes, validas, tentativas, horas_no_mes: float) -> list[dict]:
     """Mesmo recorte dos KPIs, separado por carregador. valor_sessoes = soma de
     valor_da_sessao (energia + perdas + ociosidade), sem a taxa de infraestrutura,
     que é mensal e por unidade."""
+    params = parametros_do_mes(db, mes)
     itens = []
     for c in db.scalars(select(m.Carregador).order_by(m.Carregador.id)):
         todas = [s for s in sessoes if s.carregador_id == c.id]
@@ -41,7 +42,7 @@ def _consumo_por_carregador(db: Session, sessoes, validas, tentativas, horas_no_
             "tentativas_ocupado": sum(1 for _, cid in tentativas if cid == c.id),
             # mesma base do KPI de ocupação: todas as sessões, inclusive as descartadas
             "ocupacao_pct": round(min(sum(s.duracao_min for s in todas) / 60 / horas_no_mes, 1) * 100, 1),
-            "valor_sessoes": round(sum(valor_da_sessao(db, s) for s in val), 2),
+            "valor_sessoes": round(sum(valor_da_sessao(db, s, params) for s in val), 2),
         })
     return itens
 
@@ -96,7 +97,7 @@ def resumo(mes: str | None = None, db: Session = Depends(get_db)):
     horas_ocupado = sum(s.duracao_min for s in sessoes) / 60
     retidas = [s for s in sessoes if s.status_cobranca in (m.COBRANCA_QUARENTENA, m.COBRANCA_REVISAO_IA)]
     # relatório por carregador (Sprint 01, 5.2 passo 10)
-    por_carregador = _consumo_por_carregador(db, sessoes, validas, tentativas, horas_no_mes)
+    por_carregador = _consumo_por_carregador(db, mes, sessoes, validas, tentativas, horas_no_mes)
 
     return {
         "mes": mes,
@@ -177,7 +178,7 @@ def painel_usuario(usuario_id: int, mes: str | None = None, db: Session = Depend
             for s in liberadas
         ]
         estimada = SessaoRateio(sessao_id=0, kwh=prev["kwh_previsto_restante"])
-        r = calcular_rateio(base + [estimada], parametros_calculo(obter_parametros(db)))
+        r = calcular_rateio(base + [estimada], parametros_do_mes(db, mes))
         projecao = {
             **prev,
             "kwh_projetado_mes": round(float(r.kwh_total), 2),
