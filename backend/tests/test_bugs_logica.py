@@ -127,3 +127,10 @@ def test_leitura_final_menor_que_telemetria_422(db):
     registrar_telemetria(db, s.id, T0 + timedelta(hours=1), 6.2, 1006.2)
     fim = T0 + timedelta(hours=2)
     assert _status_do_erro(encerrar_sessao, db, s.id, "usuario_desconectou", fim, 1003.0) == 422
+
+
+def test_listar_sessoes_mes_invalido_400(cliente):
+    assert cliente.get("/sessoes", params={"mes": "xx"}).status_code == 400
+    assert cliente.get("/dashboard/resumo", params={"mes": "xx"}).status_code == 400
+    usuario = next(u for u in cliente.get("/usuarios").json() if u["unidade"])
+    assert cliente.get(f"/usuarios/{usuario['id']}/painel", params={"mes": "2026-13"}).status_code == 400

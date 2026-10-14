@@ -62,7 +62,10 @@ def listar(
 ):
     q = select(m.SessaoRecarga).order_by(m.SessaoRecarga.inicio_em.desc()).limit(limite)
     if mes:
-        inicio, fim = limites_do_mes(mes)
+        try:
+            inicio, fim = limites_do_mes(mes)
+        except ValueError as erro:
+            raise HTTPException(400, str(erro)) from erro
         q = q.where(m.SessaoRecarga.inicio_em >= inicio, m.SessaoRecarga.inicio_em < fim)
     if unidade_id:
         q = q.where(m.SessaoRecarga.unidade_id == unidade_id)

@@ -49,7 +49,10 @@ def _consumo_por_carregador(db: Session, sessoes, validas, tentativas, horas_no_
 @router.get("/dashboard/resumo")
 def resumo(mes: str | None = None, db: Session = Depends(get_db)):
     mes = mes or mes_corrente()
-    inicio, fim = limites_do_mes(mes)
+    try:
+        inicio, fim = limites_do_mes(mes)
+    except ValueError as erro:
+        raise HTTPException(400, str(erro)) from erro
     agora = datetime.now()
     sessoes = list(
         db.scalars(
@@ -144,7 +147,10 @@ def painel_usuario(usuario_id: int, mes: str | None = None, db: Session = Depend
     if usuario is None or usuario.unidade_id is None:
         raise HTTPException(404, "Morador não encontrado")
     mes = mes or mes_corrente()
-    inicio, fim = limites_do_mes(mes)
+    try:
+        inicio, fim = limites_do_mes(mes)
+    except ValueError as erro:
+        raise HTTPException(400, str(erro)) from erro
     unidade = usuario.unidade
 
     sessoes = list(
