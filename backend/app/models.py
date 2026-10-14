@@ -36,6 +36,10 @@ COBRANCA_REVISAO_IA = "revisao_ia"  # IA marcou como anômala, gestor precisa de
 COBRANCA_FATURADA = "faturada"  # já entrou em uma fatura fechada
 COBRANCA_DESCARTADA = "descartada"  # gestor decidiu não cobrar
 
+# metodo_identificacao: como o morador se identificou no carregador
+METODO_RFID = "rfid"  # cartão no leitor do carregador
+METODO_APP_QR = "app_qr"  # app do morador lendo o QR Code colado no carregador
+
 
 class Unidade(Base):
     __tablename__ = "unidades"
@@ -58,7 +62,7 @@ class Usuario(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nome: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(120))
-    perfil: Mapped[str] = mapped_column(String(20), default="morador")  # morador | gestor | visitante
+    perfil: Mapped[str] = mapped_column(String(20), default="morador")  # morador | gestor
     status: Mapped[str] = mapped_column(String(20), default="ativo")  # ativo | inativo
     unidade_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"), nullable=True)
 
@@ -90,6 +94,8 @@ class Carregador(Base):
     localizacao: Mapped[str] = mapped_column(String(120))
     potencia_max_kw: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(20), default="disponivel")
+    # conteúdo do QR Code colado no carregador; o app envia junto com o usuário logado
+    qr_token: Mapped[str | None] = mapped_column(String(40), unique=True, nullable=True)
 
 
 class CredencialRFID(Base):
@@ -111,7 +117,8 @@ class SessaoRecarga(Base):
     unidade_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"), nullable=True)
     veiculo_id: Mapped[int | None] = mapped_column(ForeignKey("veiculos.id"), nullable=True)
     carregador_id: Mapped[str] = mapped_column(ForeignKey("carregadores.id"))
-    rfid_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rfid_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)  # vazio quando foi pelo app
+    metodo_identificacao: Mapped[str] = mapped_column(String(10), default=METODO_RFID)
 
     inicio_em: Mapped[datetime] = mapped_column(DateTime, index=True)
     fim_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -229,3 +236,26 @@ class AlertaIA(Base):
     acao_sugerida: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="aberto")  # aberto | resolvido
     resolucao: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+
+class Notificacao(Base):
+    """Aviso ao morador: resumo da recarga, ociosidade longa e decisão do gestor.
+
+    Não estava no esquema da Sprint 01. Atende o passo 9 do fluxo 5.2 ("usuário
+    recebe resumo da sessão"). Fica gravada para a caixa de avisos do app; o
+    envio por outro canal passa por app/notificacoes.py.
+    """
+
+    __tablename__ = "notificacoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, index=True)
+    unidade_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"), nullable=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    sessao_id: Mapped[int | None] = mapped_column(ForeignKey("sessoes_recarga.id"), nullable=True, index=True)
+    tipo: Mapped[str] = mapped_column(String(20))  # resumo_sessao | ociosidade | revisao
+    titulo: Mapped[str] = mapped_column(String(160))
+    mensagem: Mapped[str] = mapped_column(Text)
+    canal: Mapped[str] = mapped_column(String(20), default="app")
+    lida: Mapped[bool] = mapped_column(Boolean, default=False)
+    lida_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

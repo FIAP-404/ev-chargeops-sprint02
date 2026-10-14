@@ -45,8 +45,8 @@ export default function FaturaExplicavel({ unidade, mes, linhas, total, kwhTotal
       <div className="rodape">
         {pendentes > 0 && (
           <div className="aviso" role="note">
-            {pendentes === 1 ? "1 sessão está" : `${pendentes} sessões estão`} em revisão pelo gestor e ainda não
-            {pendentes === 1 ? " entrou" : " entraram"} neste valor.
+            {pendentes === 1 ? "1 sessão ainda não entrou" : `${pendentes} sessões ainda não entraram`} neste valor (em
+            andamento ou em revisão pelo gestor).
           </div>
         )}
         <span>Cálculo: energia × tarifa + perdas técnicas + taxa de infraestrutura + ociosidade − créditos.</span>

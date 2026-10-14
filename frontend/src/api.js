@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 // Em desenvolvimento o Vite repassa /api para o FastAPI (ver vite.config.js)
-const BASE = import.meta.env.VITE_API_URL || "/api";
+export const BASE = import.meta.env.VITE_API_URL || "/api";
 
 export async function api(caminho, { metodo = "GET", corpo } = {}) {
   const resp = await fetch(BASE + caminho, {

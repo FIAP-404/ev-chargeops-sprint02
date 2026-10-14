@@ -7,8 +7,8 @@
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#e2e8f0"/></marker>
   </defs>
   <rect width="1400" height="900" class="bg"/><rect width="1400" height="900" fill="url(#grid)" opacity="0.45"/>
-  <text x="50" y="55" class="title">EV ChargeOps — Arquitetura proposta</text>
-  <text x="50" y="84" class="subtitle">Da sessão de recarga GoodWe HCA G2 até rateio, fatura individual e inteligência operacional</text>
+  <text x="50" y="55" class="title">EV ChargeOps — Arquitetura implementada (Sprint 02)</text>
+  <text x="50" y="84" class="subtitle">Sprint 01 proposta, atualizada com o que o protótipo entrega</text>
 
   <rect x="40" y="120" width="1320" height="150" class="lane"/><text x="60" y="150" class="label">1. Camada física</text>
   <rect x="90" y="175" width="190" height="65" class="box physical"/><text x="110" y="202" class="label">Veículo elétrico</text><text x="110" y="225" class="small">conecta / carrega</text>
@@ -18,20 +18,20 @@
 
   <rect x="40" y="300" width="1320" height="150" class="lane"/><text x="60" y="330" class="label">2. Conectividade e captura</text>
   <rect x="100" y="355" width="240" height="65" class="box conn"/><text x="120" y="382" class="label">Interfaces do carregador</text><text x="120" y="405" class="small">LAN, Wi‑Fi, Bluetooth, RS‑485</text>
-  <rect x="430" y="355" width="230" height="65" class="box conn"/><text x="450" y="382" class="label">SEMS / API / gateway</text><text x="450" y="405" class="small">status, energia, eventos</text>
-  <rect x="750" y="355" width="210" height="65" class="box data"/><text x="770" y="382" class="label">Fila de eventos</text><text x="770" y="405" class="small">session_started, meter_tick</text>
-  <rect x="1040" y="355" width="220" height="65" class="box data"/><text x="1060" y="382" class="label">Base operacional</text><text x="1060" y="405" class="small">PostgreSQL / Timescale</text>
+  <rect x="430" y="355" width="230" height="65" class="box conn"/><text x="450" y="382" class="label">SEMS / OCPP 1.6J</text><text x="450" y="405" class="small">adaptadores + simulador</text>
+  <rect x="750" y="355" width="210" height="65" class="box data"/><text x="770" y="382" class="label">Log de eventos</text><text x="770" y="405" class="small">eventos_sessao (síncrono)</text>
+  <rect x="1040" y="355" width="220" height="65" class="box data"/><text x="1060" y="382" class="label">Base operacional</text><text x="1060" y="405" class="small">SQLite (PostgreSQL por env)</text>
 
   <rect x="40" y="480" width="1320" height="180" class="lane"/><text x="60" y="510" class="label">3. Aplicação, regras e IA</text>
-  <rect x="90" y="540" width="230" height="75" class="box app"/><text x="110" y="570" class="label">Back-end</text><text x="110" y="594" class="small">API REST, autenticação, auditoria</text>
+  <rect x="90" y="540" width="230" height="75" class="box app"/><text x="110" y="570" class="label">Back-end</text><text x="110" y="594" class="small">FastAPI, auditoria (sem login)</text>
   <rect x="390" y="540" width="250" height="75" class="box app"/><text x="410" y="570" class="label">Motor de rateio</text><text x="410" y="594" class="small">kWh × tarifa + custos comuns</text>
-  <rect x="710" y="540" width="250" height="75" class="box ai"/><text x="730" y="570" class="label">IA operacional</text><text x="730" y="594" class="small">previsão, clustering, anomalias</text>
+  <rect x="710" y="540" width="250" height="75" class="box ai"/><text x="730" y="570" class="label">IA operacional</text><text x="730" y="594" class="small">anomalias, demanda, projeção</text>
   <rect x="1030" y="540" width="250" height="75" class="box app"/><text x="1050" y="570" class="label">Faturamento</text><text x="1050" y="594" class="small">fatura individual + relatório gestor</text>
 
   <rect x="40" y="690" width="1320" height="140" class="lane"/><text x="60" y="720" class="label">4. Apresentação</text>
-  <rect x="120" y="755" width="260" height="55" class="box pres"/><text x="140" y="787" class="label">App do usuário</text>
+  <rect x="120" y="755" width="260" height="55" class="box pres"/><text x="140" y="787" class="label">Área do morador + avisos</text>
   <rect x="470" y="755" width="300" height="55" class="box pres"/><text x="490" y="787" class="label">Dashboard do gestor</text>
-  <rect x="860" y="755" width="340" height="55" class="box pres"/><text x="880" y="787" class="label">Exportação boleto/CSV/PDF</text>
+  <rect x="860" y="755" width="340" height="55" class="box pres"/><text x="880" y="787" class="label">Exportação CSV/PDF</text>
 
   <path d="M280 207 H350" class="arrow"/><path d="M580 207 H650" class="arrow"/><path d="M470 240 V355" class="arrow"/><path d="M340 388 H430" class="arrow"/><path d="M660 388 H750" class="arrow"/><path d="M960 388 H1040" class="arrow"/><path d="M1150 420 V540 H960" class="arrow"/><path d="M320 578 H390" class="arrow"/><path d="M640 578 H710" class="arrow2"/><path d="M960 578 H1030" class="arrow"/><path d="M1155 615 V755" class="arrow"/><path d="M515 615 V755" class="arrow"/><path d="M835 615 V755 H770" class="arrow2 dash"/>
 </svg>

@@ -13,8 +13,10 @@ def sessao_dict(s: m.SessaoRecarga, com_eventos: bool = False) -> dict:
         "unidade": s.unidade.rotulo if s.unidade else None,
         "veiculo": f"{s.veiculo.modelo} ({s.veiculo.placa})" if s.veiculo else None,
         "carregador_id": s.carregador_id,
+        "metodo_identificacao": s.metodo_identificacao,
         "inicio_em": s.inicio_em.isoformat(timespec="minutes"),
         "fim_em": s.fim_em.isoformat(timespec="minutes") if s.fim_em else None,
+        "leitura_inicial_kwh": s.leitura_inicial_kwh,
         "kwh_entregue": s.kwh_entregue,
         "duracao_min": s.duracao_min,
         "minutos_ociosos": s.minutos_ociosos,
@@ -86,4 +88,18 @@ def parametros_dict(p: m.ParametrosRateio) -> dict:
         "ociosidade_ativa": p.ociosidade_ativa,
         "tolerancia_ociosidade_min": p.tolerancia_ociosidade_min,
         "penalidade_ociosidade_hora": p.penalidade_ociosidade_hora,
+    }
+
+
+def notificacao_dict(n: m.Notificacao) -> dict:
+    return {
+        "id": n.id,
+        "criado_em": n.criado_em.isoformat(timespec="minutes"),
+        "sessao_id": n.sessao_id,
+        "tipo": n.tipo,
+        "titulo": n.titulo,
+        "mensagem": n.mensagem,
+        "canal": n.canal,
+        "lida": n.lida,
+        "lida_em": n.lida_em.isoformat(timespec="minutes") if n.lida_em else None,
     }

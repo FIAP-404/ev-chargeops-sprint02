@@ -1,12 +1,12 @@
 """Integração do módulo de IA com o fluxo da plataforma.
 
-É aqui que a IA deixa de ser um componente isolado e passa a ter papel
-estrutural:
-
-- avaliar_sessao_encerrada(): chamada por encerrar_sessao() em TODA sessão.
+- avaliar_sessao_encerrada(): chamada por encerrar_sessao() em toda sessão.
   O resultado decide o status de cobrança: a sessão vai direto para o rateio
-  ou fica retida em "revisao_ia" até o gestor decidir. Ou seja, nenhuma
-  sessão anômala chega na fatura sem passar por uma pessoa.
+  ou fica retida em "revisao_ia" até o gestor decidir.
+
+- treinar_modelos(): retreina os dois modelos com o histórico do banco. Roda
+  ao gerar as faturas do mês, por POST /ia/treinar e na subida da API quando
+  ainda não há modelo salvo (treinar_se_necessario).
 
 - atualizar_alertas_capacidade(): usa a previsão de demanda para gerar
   alertas de capacidade no painel do gestor (ex.: sugerir segundo ponto).
@@ -25,7 +25,15 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app.database import PASTA_DADOS
-from app.ia.anomalias import DetectorAnomalias, Motivo, aplicar_regras, br, features_da_sessao
+from app.ia.anomalias import (
+    MIN_SESSOES_TREINO,
+    DetectorAnomalias,
+    Motivo,
+    aplicar_regras,
+    br,
+    features_da_sessao,
+    potencia_saudavel,
+)
 from app.ia.previsao import PrevisorDemanda, analisar_capacidade, montar_base_demanda, projetar_kwh_restante
 
 ARQ_DETECTOR = PASTA_DADOS / "modelo_anomalias.joblib"
@@ -53,7 +61,8 @@ ACOES = {
     "conectado_sem_carregar": "Verificar se houve falha no carregador ou no veículo; avaliar descartar a sessão.",
     "falha_equipamento": "Confirmar a falha e, se comprovada, conceder crédito (ajuste) ao usuário.",
     "acima_do_perfil_do_usuario": "Confirmar com o usuário se houve uso de outro veículo ou empréstimo do cartão.",
-    "ociosidade_longa": "Avisar o usuário; a taxa de ociosidade já foi aplicada conforme a regra.",
+    "ociosidade_longa": "O morador já recebeu o aviso na Área do morador; a taxa de ociosidade entra no rateio "
+                        "conforme a regra, sem reter a cobrança.",
     "padrao_atipico": "Verificar a sessão: o padrão não se parece com o histórico (possível defeito ou uso indevido).",
 }
 
@@ -132,8 +141,10 @@ def avaliar_sessao_encerrada(db: Session, sessao: m.SessaoRecarga) -> Avaliacao:
     score = None
     if resultado_modelo is not None:
         score = resultado_modelo.percentil
-        # o modelo só acrescenta motivo se nenhuma regra já explicou a sessão
-        if resultado_modelo.outlier and not any(mo.severidade in ("media", "alta") for mo in motivos):
+        # o modelo só acrescenta motivo se nenhuma regra já explicou a sessão e se a
+        # potência não está dentro do esperado (curva reta com potência certa não é defeito)
+        if (resultado_modelo.outlier and not potencia_saudavel(feats)
+                and not any(mo.severidade in ("media", "alta") for mo in motivos)):
             detalhe = "; ".join(resultado_modelo.desvios) or "combinação incomum de duração, energia e potência"
             motivos.append(Motivo(
                 "padrao_atipico",
@@ -236,6 +247,23 @@ def treinar_modelos(db: Session, agora: datetime | None = None) -> dict:
     return {"anomalias": info_det, "demanda": info_prev, "treinado_em": agora.isoformat(timespec="seconds")}
 
 
+def treinar_se_necessario(db: Session) -> dict | None:
+    """Treino na subida da API: só quando não há detector salvo e o histórico já basta.
+
+    Sem isso, um banco com histórico mas sem os arquivos dos modelos (cópia
+    nova, pasta de dados limpa) ficaria só com as regras até a próxima fatura.
+    Só a falta do previsor (menos de 8 semanas) não dispara treino a cada subida.
+    """
+    if ARQ_DETECTOR.exists():
+        return None
+    if len(base_sessoes(db)) < MIN_SESSOES_TREINO:
+        return None
+    info = treinar_modelos(db)
+    if info["demanda"]["treinado"]:
+        atualizar_alertas_capacidade(db)
+    return info
+
+
 # --------------------------------------------------------------------------
 # Previsão de capacidade (painel do gestor)
 # --------------------------------------------------------------------------
@@ -253,7 +281,8 @@ def previsao_capacidade(db: Session, agora: datetime | None = None, horizonte_se
     agora = agora or datetime.now()
     prev = previsor()
     if not prev.treinado:
-        return {"disponivel": False, "motivo": "modelo de demanda ainda não treinado"}
+        return {"disponivel": False,
+                "motivo": "Modelo desligado (cold start): a previsão precisa de 8 semanas completas de histórico."}
     n_carregadores = db.scalar(select(func.count(m.Carregador.id))) or 1
     duracao_h = duracao_media_recente_h(db, agora)
     tabela = prev.prever(horizonte_semanas)

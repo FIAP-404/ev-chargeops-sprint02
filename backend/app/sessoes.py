@@ -1,7 +1,7 @@
 """Ciclo de vida de uma sessão de recarga.
 
 Segue o fluxo da seção 5.2 da Sprint 01:
-  1. usuário se identifica por RFID          -> iniciar_sessao()
+  1. usuário se identifica por RFID ou app/QR -> iniciar_sessao() / iniciar_sessao_app()
   2. plataforma valida o usuário
   3. sessão aberta com leitura inicial
   4. carregador envia telemetria             -> registrar_telemetria()
@@ -9,6 +9,7 @@ Segue o fluxo da seção 5.2 da Sprint 01:
   6. sessão encerrada com kWh entregues      -> encerrar_sessao()
   7/8. IA avalia a sessão e decide se ela vai direto para o rateio
        ou fica retida para revisão do gestor -> app.ia.servico
+  9. usuário recebe o resumo da sessão       -> app.notificacoes
   ...
   gestor decide sobre sessões retidas        -> revisar_sessao()
 
@@ -16,14 +17,16 @@ Tanto a API quanto o simulador chamam estas funções, então o dado simulado
 percorre exatamente o mesmo caminho que um dado real percorreria.
 """
 import hashlib
+import hmac
 import json
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models as m
-from app.faturamento import valor_da_sessao
+from app import notificacoes
+from app.faturamento import marcar_fatura_desatualizada, valor_da_sessao
 from app.ia import servico as ia
 from app.ia.anomalias import br
 
@@ -51,6 +54,12 @@ def hash_rfid(codigo: str) -> str:
     return hashlib.sha256(codigo.strip().upper().encode()).hexdigest()
 
 
+def para_hora_local(dt: datetime | None) -> datetime | None:
+    """Datas com fuso (ex.: "...Z" ou "...-03:00") viram horário local sem fuso,
+    o mesmo formato de datetime.now() usado no resto do sistema."""
+    return dt.astimezone().replace(tzinfo=None) if dt is not None and dt.tzinfo else dt
+
+
 def _evento(db: Session, sessao: m.SessaoRecarga, ts: datetime, tipo: str, payload: dict) -> None:
     db.add(m.EventoSessao(sessao_id=sessao.id, timestamp=ts, tipo_evento=tipo, payload_json=json.dumps(payload)))
 
@@ -75,9 +84,9 @@ def iniciar_sessao(
     carregador_id: str,
     codigo_rfid: str,
     inicio_em: datetime | None = None,
-    leitura_inicial_kwh: float = 0.0,
+    leitura_inicial_kwh: float | None = None,
 ) -> m.SessaoRecarga:
-    inicio_em = inicio_em or datetime.now()
+    """Início pelo cartão RFID. leitura_inicial_kwh vazia = última leitura do medidor deste carregador."""
     carregador = db.get(m.Carregador, carregador_id)
     if carregador is None:
         raise ErroSessao(f"Carregador '{carregador_id}' não encontrado", 404)
@@ -88,17 +97,113 @@ def iniciar_sessao(
     if usuario is not None and usuario.status != "ativo":
         usuario = None
 
+    # cartão desconhecido ou inativo ainda abre a sessão, que depois vai para a quarentena
+    return _abrir_sessao(
+        db,
+        carregador,
+        usuario=usuario,
+        veiculo_id=credencial.veiculo_id if (credencial and usuario) else None,
+        metodo=m.METODO_RFID,
+        rfid_hash=rfid,
+        inicio_em=inicio_em,
+        leitura_inicial_kwh=leitura_inicial_kwh,
+    )
+
+
+def iniciar_sessao_app(
+    db: Session,
+    carregador_id: str,
+    qr_token: str,
+    usuario_id: int,
+    veiculo_id: int | None = None,
+    inicio_em: datetime | None = None,
+    leitura_inicial_kwh: float | None = None,
+) -> m.SessaoRecarga:
+    """Início pelo app: o morador logado lê o QR Code colado no carregador.
+
+    Diferente do RFID, o app nunca abre sessão anônima: QR inválido, usuário
+    inativo ou sem unidade são recusados aqui e não vão para a quarentena.
+    """
+    carregador = db.get(m.Carregador, carregador_id)
+    if carregador is None:
+        raise ErroSessao(f"Carregador '{carregador_id}' não encontrado", 404)
+    if carregador.qr_token is None or not hmac.compare_digest(carregador.qr_token.encode(), qr_token.encode()):
+        raise ErroSessao("QR Code inválido para este carregador", 403)
+
+    usuario = db.get(m.Usuario, usuario_id)
+    if usuario is None:
+        raise ErroSessao("Usuário não encontrado", 404)
+    if usuario.status != "ativo":
+        raise ErroSessao("Usuário inativo não pode iniciar recarga", 403)
+    if usuario.unidade_id is None:
+        raise ErroSessao("Usuário sem unidade não pode iniciar recarga pelo app", 403)
+
+    # no cartão o veículo vem da credencial; no app ele é escolhido ou deduzido
+    if veiculo_id is not None:
+        if veiculo_id not in {v.id for v in usuario.veiculos}:
+            raise ErroSessao("Veículo não pertence ao usuário", 422)
+    elif not usuario.veiculos:
+        raise ErroSessao("Usuário sem veículo cadastrado", 422)
+    elif len(usuario.veiculos) > 1:
+        raise ErroSessao("Informe veiculo_id: o usuário tem mais de um veículo", 422)
+    else:
+        veiculo_id = usuario.veiculos[0].id
+
+    return _abrir_sessao(
+        db,
+        carregador,
+        usuario=usuario,
+        veiculo_id=veiculo_id,
+        metodo=m.METODO_APP_QR,
+        rfid_hash=None,
+        inicio_em=inicio_em,
+        leitura_inicial_kwh=leitura_inicial_kwh,
+    )
+
+
+def _abrir_sessao(
+    db: Session,
+    carregador: m.Carregador,
+    *,
+    usuario: m.Usuario | None,
+    veiculo_id: int | None,
+    metodo: str,
+    rfid_hash: str | None,
+    inicio_em: datetime | None,
+    leitura_inicial_kwh: float | None,
+) -> m.SessaoRecarga:
+    """Regras comuns aos dois jeitos de iniciar (RFID e app/QR)."""
+    inicio_em = para_hora_local(inicio_em) or datetime.now()
+
     # um carregador só atende uma sessão por vez; a tentativa vira dado de demanda
-    if sessao_aberta_do_carregador(db, carregador_id) is not None:
-        registrar_tentativa_ocupado(db, carregador_id, usuario.id if usuario else None, inicio_em)
+    if sessao_aberta_do_carregador(db, carregador.id) is not None:
+        registrar_tentativa_ocupado(db, carregador.id, usuario.id if usuario else None, inicio_em)
         raise ErroSessao("Carregador ocupado: já existe uma sessão em andamento", 409)
 
+    # a sessão começa depois da anterior e o medidor continua de onde ela parou
+    ultima = db.scalar(
+        select(m.SessaoRecarga)
+        .where(m.SessaoRecarga.carregador_id == carregador.id)
+        .order_by(m.SessaoRecarga.inicio_em.desc())
+        .limit(1)
+    )
+    if ultima is not None and ultima.fim_em > inicio_em:
+        raise ErroSessao("inicio_em se sobrepõe a uma sessão já encerrada neste carregador", 422)
+    leitura_anterior = ultima.leitura_final_kwh if ultima is not None else 0.0
+    if leitura_inicial_kwh is None:
+        leitura_inicial_kwh = leitura_anterior
+    elif leitura_inicial_kwh < leitura_anterior:
+        raise ErroSessao(
+            f"leitura_inicial_kwh menor que a última leitura do medidor ({br(leitura_anterior, 3)} kWh)", 422
+        )
+
     sessao = m.SessaoRecarga(
-        carregador_id=carregador_id,
-        rfid_hash=rfid,
+        carregador_id=carregador.id,
+        rfid_hash=rfid_hash,
+        metodo_identificacao=metodo,
         usuario_id=usuario.id if usuario else None,
         unidade_id=usuario.unidade_id if usuario else None,
-        veiculo_id=credencial.veiculo_id if (credencial and usuario) else None,
+        veiculo_id=veiculo_id,
         inicio_em=inicio_em,
         leitura_inicial_kwh=leitura_inicial_kwh,
         leitura_final_kwh=leitura_inicial_kwh,
@@ -112,7 +217,7 @@ def iniciar_sessao(
         sessao,
         inicio_em,
         "inicio",
-        {"identificado": usuario is not None, "leitura_inicial_kwh": leitura_inicial_kwh},
+        {"identificado": usuario is not None, "metodo": metodo, "leitura_inicial_kwh": leitura_inicial_kwh},
     )
     carregador.status = "em_uso"
     db.commit()
@@ -133,7 +238,10 @@ def registrar_telemetria(
     o HCA G2/SEMS reporta. O kWh da sessão é calculado pela diferença entre a
     leitura final e a inicial.
     """
+    timestamp = para_hora_local(timestamp)
     sessao = _sessao_aberta(db, sessao_id)
+    if timestamp < sessao.inicio_em:
+        raise ErroSessao("timestamp da telemetria anterior ao início da sessão", 422)
 
     if energia_acumulada_kwh < (sessao.leitura_final_kwh or 0):
         # medidor não pode andar para trás: registra o problema e ignora a leitura
@@ -173,9 +281,16 @@ def encerrar_sessao(
         raise ErroSessao(f"Motivo inválido. Use um destes: {sorted(MOTIVOS_ENCERRAMENTO)}")
 
     sessao = _sessao_aberta(db, sessao_id)
-    fim_em = fim_em or datetime.now()
+    fim_em = para_hora_local(fim_em) or datetime.now()
     if fim_em < sessao.inicio_em:
         raise ErroSessao("fim_em anterior ao início da sessão")
+    ultimo_evento = db.scalar(select(func.max(m.EventoSessao.timestamp)).where(m.EventoSessao.sessao_id == sessao.id))
+    if ultimo_evento is not None and fim_em < ultimo_evento:
+        raise ErroSessao("fim_em anterior à última telemetria da sessão", 422)
+    if leitura_final_kwh is not None and leitura_final_kwh < sessao.leitura_final_kwh:
+        raise ErroSessao(
+            f"leitura_final_kwh menor que a última telemetria ({br(sessao.leitura_final_kwh, 3)} kWh)", 422
+        )
 
     # Falha de comunicação: sem leitura final, usa o último dado válido
     # recebido na telemetria (Sprint 01, seção 5.4).
@@ -243,7 +358,13 @@ def encerrar_sessao(
         if avaliacao.motivos:
             # motivos de severidade baixa só geram aviso; média/alta também retêm a cobrança
             db.add(ia.alerta_da_avaliacao(sessao, avaliacao, fim_em))
+        # passo 9 do fluxo 5.2: o morador recebe o resumo (a quarentena não tem a quem avisar)
+        notificacoes.notificar_resumo_sessao(db, sessao, avaliacao.motivos, fim_em)
+        if any(mo["codigo"] == "ociosidade_longa" for mo in avaliacao.motivos):
+            notificacoes.notificar_ociosidade(db, sessao, fim_em)
 
+    # sessão aberta no fechamento do mês: a fatura já gerada ficou sem ela
+    marcar_fatura_desatualizada(db, sessao)
     db.commit()
     return sessao
 
@@ -255,11 +376,13 @@ def revisar_sessao(
     usuario_id: int | None = None,
     ajuste_valor: float = 0.0,
     observacao: str = "",
+    agora: datetime | None = None,
 ) -> m.SessaoRecarga:
     """Decisão do gestor sobre uma sessão retida (quarentena ou revisão da IA).
 
     decisao = "liberar"   -> entra no rateio (opcionalmente com crédito/ajuste)
     decisao = "descartar" -> não será cobrada
+    agora vazio = horário atual (o simulador passa o horário simulado)
     """
     sessao = db.get(m.SessaoRecarga, sessao_id)
     if sessao is None:
@@ -271,6 +394,8 @@ def revisar_sessao(
     if ajuste_valor < 0:
         raise ErroSessao("ajuste_valor é um crédito e deve ser >= 0")
 
+    agora = agora or datetime.now()
+    da_quarentena = sessao.status_cobranca == m.COBRANCA_QUARENTENA
     if decisao == "liberar":
         teto = valor_da_sessao(db, sessao)
         if ajuste_valor > teto:
@@ -293,7 +418,7 @@ def revisar_sessao(
     _evento(
         db,
         sessao,
-        datetime.now(),
+        agora,
         "revisao",
         {"decisao": decisao, "ajuste_valor": ajuste_valor, "observacao": observacao, "usuario_id": usuario_id},
     )
@@ -302,6 +427,9 @@ def revisar_sessao(
     ):
         alerta.status = "resolvido"
         alerta.resolucao = f"{decisao}: {observacao}".strip(": ")
+    if sessao.usuario_id is not None:
+        notificacoes.notificar_revisao(db, sessao, decisao, sessao.ajuste_valor, observacao, da_quarentena, agora)
+    marcar_fatura_desatualizada(db, sessao)
     db.commit()
     return sessao
 

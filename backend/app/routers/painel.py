@@ -3,12 +3,12 @@ from collections import defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models as m
 from app.database import get_db
-from app.faturamento import calcular_unidade, limites_do_mes, obter_parametros, parametros_calculo, valor_da_sessao
+from app.faturamento import calcular_unidade, limites_do_mes, parametros_do_mes, valor_da_sessao
 from app.ia import servico as ia
 from app.rateio import SessaoRateio, calcular_rateio
 from app.serializacao import fatura_dict, sessao_dict
@@ -22,10 +22,38 @@ def mes_corrente() -> str:
     return datetime.now().strftime("%Y-%m")
 
 
+def _consumo_por_carregador(db: Session, mes: str, sessoes, validas, tentativas, horas_no_mes: float) -> list[dict]:
+    """Mesmo recorte dos KPIs, separado por carregador. valor_sessoes = soma de
+    valor_da_sessao (energia + perdas + ociosidade), sem a taxa de infraestrutura,
+    que é mensal e por unidade."""
+    params = parametros_do_mes(db, mes)
+    itens = []
+    for c in db.scalars(select(m.Carregador).order_by(m.Carregador.id)):
+        todas = [s for s in sessoes if s.carregador_id == c.id]
+        val = [s for s in validas if s.carregador_id == c.id]
+        itens.append({
+            "carregador_id": c.id,
+            "fabricante": c.fabricante,
+            "modelo": c.modelo,
+            "localizacao": c.localizacao,
+            "sessoes": len(val),
+            "kwh": round(sum(s.kwh_entregue for s in val), 2),
+            "minutos_ociosos": round(sum(s.minutos_ociosos for s in val)),
+            "tentativas_ocupado": sum(1 for _, cid in tentativas if cid == c.id),
+            # mesma base do KPI de ocupação: todas as sessões, inclusive as descartadas
+            "ocupacao_pct": round(min(sum(s.duracao_min for s in todas) / 60 / horas_no_mes, 1) * 100, 1),
+            "valor_sessoes": round(sum(valor_da_sessao(db, s, params) for s in val), 2),
+        })
+    return itens
+
+
 @router.get("/dashboard/resumo")
 def resumo(mes: str | None = None, db: Session = Depends(get_db)):
     mes = mes or mes_corrente()
-    inicio, fim = limites_do_mes(mes)
+    try:
+        inicio, fim = limites_do_mes(mes)
+    except ValueError as erro:
+        raise HTTPException(400, str(erro)) from erro
     agora = datetime.now()
     sessoes = list(
         db.scalars(
@@ -33,13 +61,11 @@ def resumo(mes: str | None = None, db: Session = Depends(get_db)):
         )
     )
     validas = [s for s in sessoes if s.status_cobranca not in NAO_COBRADAS]
-    tentativas = list(
-        db.scalars(
-            select(m.TentativaOcupado.timestamp).where(
-                m.TentativaOcupado.timestamp >= inicio, m.TentativaOcupado.timestamp < fim
-            )
+    tentativas = db.execute(
+        select(m.TentativaOcupado.timestamp, m.TentativaOcupado.carregador_id).where(
+            m.TentativaOcupado.timestamp >= inicio, m.TentativaOcupado.timestamp < fim
         )
-    )
+    ).all()
 
     # rateio de cada unidade no mês (prévia ou fatura fechada, o cálculo é o mesmo)
     por_unidade = []
@@ -64,12 +90,14 @@ def resumo(mes: str | None = None, db: Session = Depends(get_db)):
         d["sessoes"] += 1
     for s in sessoes:
         chegadas_hora[s.inicio_em.hour] += 1
-    for ts in tentativas:
+    for ts, _ in tentativas:
         chegadas_hora[ts.hour] += 1
 
     horas_no_mes = max(((min(agora, fim) if inicio <= agora else fim) - inicio).total_seconds() / 3600, 1)
     horas_ocupado = sum(s.duracao_min for s in sessoes) / 60
     retidas = [s for s in sessoes if s.status_cobranca in (m.COBRANCA_QUARENTENA, m.COBRANCA_REVISAO_IA)]
+    # relatório por carregador (Sprint 01, 5.2 passo 10)
+    por_carregador = _consumo_por_carregador(db, mes, sessoes, validas, tentativas, horas_no_mes)
 
     return {
         "mes": mes,
@@ -84,6 +112,7 @@ def resumo(mes: str | None = None, db: Session = Depends(get_db)):
             "unidades_ativas": sum(1 for u in por_unidade if u["sessoes"] > 0),
         },
         "consumo_por_unidade": por_unidade,
+        "consumo_por_carregador": por_carregador,
         "consumo_diario": [
             {"data": d, "kwh": round(v["kwh"], 2), "sessoes": v["sessoes"]} for d, v in sorted(diario.items())
         ],
@@ -119,7 +148,10 @@ def painel_usuario(usuario_id: int, mes: str | None = None, db: Session = Depend
     if usuario is None or usuario.unidade_id is None:
         raise HTTPException(404, "Morador não encontrado")
     mes = mes or mes_corrente()
-    inicio, fim = limites_do_mes(mes)
+    try:
+        inicio, fim = limites_do_mes(mes)
+    except ValueError as erro:
+        raise HTTPException(400, str(erro)) from erro
     unidade = usuario.unidade
 
     sessoes = list(
@@ -146,7 +178,7 @@ def painel_usuario(usuario_id: int, mes: str | None = None, db: Session = Depend
             for s in liberadas
         ]
         estimada = SessaoRateio(sessao_id=0, kwh=prev["kwh_previsto_restante"])
-        r = calcular_rateio(base + [estimada], parametros_calculo(obter_parametros(db)))
+        r = calcular_rateio(base + [estimada], parametros_do_mes(db, mes))
         projecao = {
             **prev,
             "kwh_projetado_mes": round(float(r.kwh_total), 2),
@@ -156,6 +188,11 @@ def painel_usuario(usuario_id: int, mes: str | None = None, db: Session = Depend
 
     faturas = db.scalars(
         select(m.Fatura).where(m.Fatura.unidade_id == unidade.id).order_by(m.Fatura.mes_referencia.desc())
+    )
+    nao_lidas = db.scalar(
+        select(func.count(m.Notificacao.id)).where(
+            m.Notificacao.usuario_id == usuario.id, m.Notificacao.lida.is_(False)
+        )
     )
     return {
         "mes": mes,
@@ -169,4 +206,5 @@ def painel_usuario(usuario_id: int, mes: str | None = None, db: Session = Depend
         "projecao_ia": projecao,
         "sessoes": [sessao_dict(s) for s in sessoes],
         "faturas": [fatura_dict(f) for f in faturas],
+        "notificacoes_nao_lidas": nao_lidas,
     }

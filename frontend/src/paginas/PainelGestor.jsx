@@ -13,6 +13,7 @@ export default function PainelGestor() {
   const previsao = useApi("/ia/previsao-capacidade");
   const alertas = useApi("/ia/alertas?status=aberto");
   const usuarios = useApi("/usuarios");
+  const statusIa = useApi("/ia/status");
 
   const recarregar = () => {
     resumo.recarregar();
@@ -25,6 +26,7 @@ export default function PainelGestor() {
   const meses = historico.dados?.map((h) => h.mes) ?? [mes];
   const moradores = (usuarios.dados ?? []).filter((u) => u.unidade);
   const avisos = (alertas.dados ?? []).filter((a) => a.tipo === "anomalia_sessao" && a.severidade === "baixa");
+  const modelo = statusIa.dados?.anomalias;
 
   return (
     <>
@@ -62,6 +64,12 @@ export default function PainelGestor() {
           <header>
             <h2 id="t-decisoes">Decisões pendentes</h2>
             <p>A IA retém a cobrança de sessões fora do padrão até você decidir.</p>
+            {modelo?.cold_start && (
+              <p className="mudo" style={{ flexBasis: "100%" }}>
+                Modelo desligado (cold start): só as regras de negócio avaliam as sessões. O Isolation Forest liga com{" "}
+                {modelo.minimo_sessoes} sessões no histórico (hoje: {modelo.sessoes_elegiveis}).
+              </p>
+            )}
           </header>
           {r ? (
             <DecisoesPendentes
@@ -112,10 +120,14 @@ export default function PainelGestor() {
           <header>
             <h2 id="t-calor">Quando a procura vai acontecer na próxima semana</h2>
             <p>
-              Regressão de Poisson treinada com {previsao.dados.metricas_modelo.semanas_historico} semanas. No teste com
-              as últimas 4 semanas, errou {num(previsao.dados.metricas_modelo.erro_semanal_medio_pct_modelo, 0)}% no
-              total semanal, contra {num(previsao.dados.metricas_modelo.erro_semanal_medio_pct_baseline, 0)}% da média
-              histórica simples.
+              Regressão de Poisson treinada com {previsao.dados.metricas_modelo.semanas_historico} semanas.
+              {previsao.dados.metricas_modelo.erro_semanal_medio_pct_modelo != null ? (
+                <>
+                  {" "}No teste com as últimas 4 semanas, errou{" "}
+                  {num(previsao.dados.metricas_modelo.erro_semanal_medio_pct_modelo, 0)}% no total semanal, contra{" "}
+                  {num(previsao.dados.metricas_modelo.erro_semanal_medio_pct_baseline, 0)}% da média histórica simples.
+                </>
+              ) : " Ainda sem erro semanal medido: alguma das últimas 4 semanas não teve chegadas."}
             </p>
           </header>
           <MapaDeCalor grade={previsao.dados.grade_proxima_semana} />
@@ -171,6 +183,48 @@ export default function PainelGestor() {
             )}
           </div>
         </div>
+      )}
+
+      {r && (
+        <section className="bloco" style={{ marginTop: 20 }} aria-labelledby="t-carregadores">
+          <header>
+            <h2 id="t-carregadores">Consumo por carregador</h2>
+            <p>Valor das sessões sem a taxa de infraestrutura, que é cobrada por unidade</p>
+          </header>
+          <div className="tabela-rolagem">
+            <table>
+              <thead>
+                <tr>
+                  <th>Carregador</th>
+                  <th>Local</th>
+                  <th className="num">Sessões</th>
+                  <th className="num">Energia</th>
+                  <th className="num">Ocupação</th>
+                  <th className="num">Sem carregar</th>
+                  <th className="num">Procura não atendida</th>
+                  <th className="num">Valor das sessões</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.consumo_por_carregador.map((c) => (
+                  <tr key={c.carregador_id}>
+                    <td>{c.fabricante} {c.modelo}</td>
+                    <td>{c.localizacao}</td>
+                    <td className="num">{c.sessoes}</td>
+                    <td className="num">{kwh(c.kwh, 0)}</td>
+                    <td className="num">{num(c.ocupacao_pct, 0)}%</td>
+                    <td className="num">{duracaoHoras(c.minutos_ociosos)}</td>
+                    <td className="num">{c.tentativas_ocupado}</td>
+                    <td className="num">{brl(c.valor_sessoes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mudo" style={{ marginTop: 8 }}>
+            Valores incluem sessões ainda em revisão; a fatura cobra só as liberadas.
+          </p>
+        </section>
       )}
     </>
   );

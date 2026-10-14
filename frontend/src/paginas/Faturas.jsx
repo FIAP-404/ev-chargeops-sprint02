@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, useApi } from "../api";
+import { api, BASE, useApi } from "../api";
 import FaturaExplicavel from "../componentes/FaturaExplicavel";
 import { brl, kwh, mesAtual, nomeMes, nomeMesTitulo } from "../formatos";
 import { ErroApi } from "./PainelGestor";
@@ -38,7 +38,11 @@ export default function Faturas() {
       const pend = lista.reduce((s, f) => s + f.sessoes_pendentes, 0);
       setMensagem(
         `${lista.length} faturas geradas para ${nomeMes(mes)}.` +
-          (pend ? ` ${pend} sessões em revisão ficaram de fora; gere de novo depois de decidir.` : "")
+          (pend === 1
+            ? " 1 sessão pendente (em revisão ou ainda aberta) ficou de fora; gere de novo depois que ela for decidida ou encerrada."
+            : pend
+              ? ` ${pend} sessões pendentes (em revisão ou ainda abertas) ficaram de fora; gere de novo depois que forem decididas ou encerradas.`
+              : "")
       );
       historico.recarregar();
     } finally {
@@ -67,6 +71,12 @@ export default function Faturas() {
           <button className="botao" onClick={fecharMes} disabled={gerando || !mes} aria-busy={gerando || undefined}>
             {faturas?.length ? "Recalcular faturas do mês" : "Fechar mês e gerar faturas"}
           </button>
+          {/* link comum: a API responde com Content-Disposition e o navegador baixa o arquivo */}
+          {faturas?.length > 0 && (
+            <a className="botao secundario" href={`${BASE}/faturas/exportar.csv?mes=${mes}`} download>
+              Exportar CSV
+            </a>
+          )}
         </div>
       </header>
 
@@ -106,7 +116,13 @@ export default function Faturas() {
                       tabIndex={0}
                       onKeyDown={(e) => e.key === "Enter" && setSelecionada(f)}
                     >
-                      <td>{f.unidade}{f.sessoes_pendentes > 0 && <span className="mudo"> ({f.sessoes_pendentes} em revisão)</span>}</td>
+                      <td>
+                        {f.unidade}
+                        {f.sessoes_pendentes > 0 && (
+                          <span className="mudo"> ({f.sessoes_pendentes} {f.sessoes_pendentes === 1 ? "pendente" : "pendentes"})</span>
+                        )}
+                        {f.status === "desatualizada" && <span className="mudo"> (desatualizada: gere o mês de novo)</span>}
+                      </td>
                       <td className="num">{f.qtd_sessoes}</td>
                       <td className="num">{kwh(f.kwh_total)}</td>
                       <td className="num">{brl(f.valor_ociosidade)}</td>
@@ -120,18 +136,23 @@ export default function Faturas() {
           )}
         </section>
 
-        <div>
+        <div className="pilha">
           {selecionada && (
-            <FaturaExplicavel
-              unidade={selecionada.unidade}
-              mes={selecionada.mes_referencia}
-              linhas={selecionada.memoria_calculo.linhas}
-              total={selecionada.valor_total}
-              kwhTotal={selecionada.kwh_total}
-              qtdSessoes={selecionada.qtd_sessoes}
-              porVeiculo={selecionada.memoria_calculo.kwh_por_veiculo}
-              pendentes={selecionada.sessoes_pendentes}
-            />
+            <>
+              <FaturaExplicavel
+                unidade={selecionada.unidade}
+                mes={selecionada.mes_referencia}
+                linhas={selecionada.memoria_calculo.linhas}
+                total={selecionada.valor_total}
+                kwhTotal={selecionada.kwh_total}
+                qtdSessoes={selecionada.qtd_sessoes}
+                porVeiculo={selecionada.memoria_calculo.kwh_por_veiculo}
+                pendentes={selecionada.sessoes_pendentes}
+              />
+              <button className="botao secundario" onClick={() => window.print()}>
+                Imprimir / salvar PDF
+              </button>
+            </>
           )}
         </div>
       </div>

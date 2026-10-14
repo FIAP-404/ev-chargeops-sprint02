@@ -5,7 +5,7 @@ geramos ~6 meses de uso de um condomínio com um carregador compartilhado.
 
 Ponto importante: o simulador NÃO grava direto no banco. Ele faz o papel do
 carregador e dos moradores e chama as mesmas funções que a API usa
-(iniciar_sessao, registrar_telemetria, encerrar_sessao). Assim os dados
+(iniciar_sessao/iniciar_sessao_app, registrar_telemetria, encerrar_sessao). Assim os dados
 simulados passam pelas mesmas regras, pela IA e pelo rateio que os dados
 reais passariam.
 
@@ -16,6 +16,7 @@ O que o simulador reproduz:
 - disputa pelo carregador: quem chega e encontra ocupado gera uma tentativa
   registrada e às vezes volta mais tarde;
 - ociosidade depois da carga completa e sessões interrompidas;
+- ~30% das sessões iniciadas pelo app (QR Code do carregador) em vez do cartão;
 - ~4% de anomalias injetadas (falha de medição, pico de potência, cabo com
   defeito, conectado sem carregar, falha do carregador, cartão desconhecido).
 
@@ -28,17 +29,18 @@ import random
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import event, select
+from sqlalchemy import event, select, update
 
 from app import models as m
 from app.database import Base, SessionLocal, engine
-from app.faturamento import gerar_faturas
+from app.faturamento import gerar_faturas, valor_da_sessao
 from app.ia import servico as ia
-from app.seed import CADASTRO, CARREGADOR_ID, popular_cadastro
+from app.seed import CADASTRO, CARREGADOR_ID, QR_TOKEN_CARREGADOR, popular_cadastro
 from app.sessoes import (
     encerrar_sessao,
     hash_rfid,
     iniciar_sessao,
+    iniciar_sessao_app,
     registrar_tentativa_ocupado,
     registrar_telemetria,
     revisar_sessao,
@@ -100,11 +102,14 @@ TIPOS_ANOMALIA = [
 
 class Simulador:
     def __init__(self, db, rng: random.Random, inicio: datetime, ate: datetime, fator_demanda: float = 0.65,
-                 taxa_anomalias: float = 0.07):
+                 taxa_anomalias: float = 0.07, rng_metodo: random.Random | None = None):
         self.taxa_anomalias = taxa_anomalias  # chance de uma anomalia por dia
         self.db = db
         self.fator_demanda = fator_demanda  # multiplica a frequência de todos os perfis
         self.rng = rng
+        # sorteio separado para RFID x app: usar self.rng mudaria todas as sessões
+        # geradas depois do primeiro sorteio (e os números citados no README)
+        self.rng_metodo = rng_metodo or random.Random(1_000_003)
         self.inicio = inicio
         self.ate = ate
         self.medidor = 1520.0  # leitura acumulada do medidor do carregador (kWh)
@@ -189,7 +194,17 @@ class Simulador:
         if anomalia == "sem_carregar":
             horas_carga = rng.uniform(1.5, 3.0)
 
-        sessao = iniciar_sessao(self.db, CARREGADOR_ID, rfid, inicio, self.medidor)
+        # visitante não tem o app; os moradores usam o app em ~30% das recargas
+        usa_app = anomalia != "cartao_desconhecido" and self.rng_metodo.random() < 0.30
+        if usa_app:
+            cred = self.db.scalar(
+                select(m.CredencialRFID).where(m.CredencialRFID.codigo_rfid_hash == hash_rfid(perfil.rfid))
+            )
+            sessao = iniciar_sessao_app(
+                self.db, CARREGADOR_ID, QR_TOKEN_CARREGADOR, cred.usuario_id, cred.veiculo_id, inicio, self.medidor
+            )
+        else:
+            sessao = iniciar_sessao(self.db, CARREGADOR_ID, rfid, inicio, self.medidor)
         if anomalia:
             self.gabarito.append({"sessao_id": sessao.id, "tipo": anomalia, "inicio_em": inicio.isoformat()})
         t, energia, fim_carga = inicio, 0.0, inicio + timedelta(minutes=max(round(horas_carga * 60), 1))
@@ -258,15 +273,23 @@ class Simulador:
                     fila.sort(key=lambda c: c[0])
             dia += timedelta(days=1)
 
+        # avisos de recargas com mais de 7 dias já foram vistos pelo morador;
+        # assim a caixa de avisos mostra como não lido só o que é recente
+        antigas = select(m.SessaoRecarga.id).where(m.SessaoRecarga.inicio_em < self.ate - timedelta(days=7))
+        self.db.execute(
+            update(m.Notificacao).where(m.Notificacao.sessao_id.in_(antigas)).values(lida=True, lida_em=self.ate)
+        )
+        self.db.commit()
+
     def fechar_mes(self, mes: str, agora: datetime) -> None:
-        revisar_pendencias_do_gestor(self.db, mes, self.rng)
+        revisar_pendencias_do_gestor(self.db, mes, self.rng, agora)
         gerar_faturas(self.db, mes)
         info = ia.treinar_modelos(self.db, agora)
         print(f"  {mes}: faturas geradas | IA retreinada: "
               f"anomalias={info['anomalias'].get('treinado')} demanda={info['demanda'].get('treinado')}")
 
 
-def revisar_pendencias_do_gestor(db, mes: str, rng: random.Random) -> None:
+def revisar_pendencias_do_gestor(db, mes: str, rng: random.Random, agora: datetime) -> None:
     """Simula a síndica tratando os alertas do mês antes de fechar as faturas."""
     from app.faturamento import limites_do_mes
 
@@ -285,13 +308,16 @@ def revisar_pendencias_do_gestor(db, mes: str, rng: random.Random) -> None:
         if s.status_cobranca == m.COBRANCA_QUARENTENA:
             anfitriao = rng.choice(moradores)
             revisar_sessao(db, s.id, "liberar", usuario_id=anfitriao.id,
-                           observacao=f"visitante de {anfitriao.nome}")
+                           observacao=f"visitante de {anfitriao.nome}", agora=agora)
         elif codigos & {"kwh_acima_da_bateria", "conectado_sem_carregar"}:
-            revisar_sessao(db, s.id, "descartar", observacao="erro de medição confirmado")
+            revisar_sessao(db, s.id, "descartar", observacao="erro de medição confirmado", agora=agora)
         elif "falha_equipamento" in codigos:
-            revisar_sessao(db, s.id, "liberar", ajuste_valor=5.0, observacao="falha confirmada, crédito de R$ 5")
+            # R$ 5 de crédito, limitado ao valor da sessão (uma falha logo no início vale menos que isso)
+            credito = min(5.0, valor_da_sessao(db, s))
+            revisar_sessao(db, s.id, "liberar", ajuste_valor=credito,
+                           observacao=f"falha confirmada, crédito de R$ {credito:.2f}".replace(".", ","), agora=agora)
         else:
-            revisar_sessao(db, s.id, "liberar", observacao="leitura conferida")
+            revisar_sessao(db, s.id, "liberar", observacao="leitura conferida", agora=agora)
 
     # avisos de ociosidade dos meses fechados são dados como tratados
     for alerta in db.scalars(
@@ -335,7 +361,8 @@ def main() -> None:
     popular_cadastro(db)
 
     print(f"Simulando de {inicio:%d/%m/%Y} até {ate:%d/%m/%Y %H:%M} (seed={args.seed})...")
-    sim = Simulador(db, random.Random(args.seed), inicio, ate, args.fator_demanda, args.taxa_anomalias)
+    sim = Simulador(db, random.Random(args.seed), inicio, ate, args.fator_demanda, args.taxa_anomalias,
+                    rng_metodo=random.Random(args.seed + 1_000_003))
     if args.sem_roteiro:
         sim.roteiro = {}
     sim.rodar()

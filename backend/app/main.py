@@ -4,14 +4,19 @@ Rodar (dentro da pasta backend):
     uvicorn app.main:app --reload
 Documentação interativa: http://localhost:8000/docs
 """
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import SessionLocal, criar_tabelas
-from app.routers import faturas, ia, painel, sessoes
+from app.ia.servico import treinar_se_necessario
+from app.routers import faturas, ia, integracoes, notificacoes, ocpp, painel, sessoes
 from app.seed import popular_cadastro
+
+# mostra no console da API os avisos do EnviadorConsole (app/notificacoes.py)
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(message)s")
 
 
 @asynccontextmanager
@@ -20,6 +25,11 @@ async def ciclo_de_vida(_app: FastAPI):
     criar_tabelas()
     with SessionLocal() as db:
         popular_cadastro(db)
+        # banco com histórico mas sem modelo salvo: treina agora em vez de esperar a próxima fatura
+        try:
+            treinar_se_necessario(db)
+        except Exception:  # a API sobe mesmo assim, só com as regras
+            logging.getLogger("evchargeops.ia").exception("treino inicial da IA falhou")
     yield
 
 
@@ -42,6 +52,9 @@ app.include_router(sessoes.router)
 app.include_router(faturas.router)
 app.include_router(painel.router)
 app.include_router(ia.router)
+app.include_router(notificacoes.router)
+app.include_router(integracoes.router)
+app.include_router(ocpp.router)
 
 
 @app.get("/health", tags=["Sistema"])

@@ -28,6 +28,16 @@ def iniciar(body: schemas.IniciarSessao, db: Session = Depends(get_db)):
     return sessao_dict(s)
 
 
+@router.post("/iniciar-app", status_code=201)
+def iniciar_app(body: schemas.IniciarSessaoApp, db: Session = Depends(get_db)):
+    s = _executar(
+        sessoes.iniciar_sessao_app,
+        db, body.carregador_id, body.qr_token, body.usuario_id, body.veiculo_id, body.inicio_em,
+        body.leitura_inicial_kwh,
+    )
+    return sessao_dict(s)
+
+
 @router.post("/{sessao_id}/telemetria")
 def telemetria(sessao_id: int, body: schemas.Telemetria, db: Session = Depends(get_db)):
     s = _executar(
@@ -62,7 +72,10 @@ def listar(
 ):
     q = select(m.SessaoRecarga).order_by(m.SessaoRecarga.inicio_em.desc()).limit(limite)
     if mes:
-        inicio, fim = limites_do_mes(mes)
+        try:
+            inicio, fim = limites_do_mes(mes)
+        except ValueError as erro:
+            raise HTTPException(400, str(erro)) from erro
         q = q.where(m.SessaoRecarga.inicio_em >= inicio, m.SessaoRecarga.inicio_em < fim)
     if unidade_id:
         q = q.where(m.SessaoRecarga.unidade_id == unidade_id)

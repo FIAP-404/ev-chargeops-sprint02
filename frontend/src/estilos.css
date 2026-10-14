@@ -226,6 +226,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 .botao.perigo:disabled { background: transparent; }
 .botao[aria-busy="true"] { cursor: progress; }
+a.botao { text-decoration: none; }
 
 .campo { display: flex; flex-direction: column; gap: 4px; font-size: 0.83rem; color: var(--tinta-2); font-weight: 500; }
 .campo input, .campo select, select.seletor {
@@ -257,7 +258,24 @@ button, input, select { font: inherit; color: inherit; }
 .campo .campo-reais input { flex: 1; height: 100%; border: 0; background: transparent; padding: 0 12px 0 6px; }
 .campo .campo-reais input:focus-visible { outline: none; }
 .linha-controles { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-input[type="checkbox"] { accent-color: var(--marca); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--marca); }
+
+/* escolha entre opções curtas (ex.: cartão RFID ou app) */
+.opcoes { border: 0; margin: 0; padding: 0; display: flex; gap: 18px; flex-wrap: wrap; }
+.opcoes legend { padding: 0; margin-bottom: 6px; font-size: 0.83rem; color: var(--tinta-2); font-weight: 500; }
+.opcoes label { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer; }
+
+/* adesivo com o QR Code colado no carregador */
+.qr-adesivo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 2px dashed var(--linha-forte);
+  border-radius: var(--raio-pequeno);
+}
+.qr-adesivo code { font-size: 1rem; font-weight: 650; letter-spacing: 0.04em; }
+.qr-adesivo span { color: var(--tinta-3); font-size: 0.76rem; }
 
 /* ---------- tabelas ---------- */
 .tabela-rolagem { overflow-x: auto; }
@@ -331,6 +349,14 @@ tr.selecionada td:first-child { box-shadow: inset 3px 0 0 var(--marca); }
 .alerta:first-of-type { border-top: 0; }
 .alerta .msg { color: var(--tinta-2); font-size: 0.84rem; }
 .alerta .botao { grid-column: 2; justify-self: start; }
+
+/* caixa de avisos do morador: não lido marcado com a cor da marca */
+.avisos-lista { list-style: none; margin: 0; padding: 0; }
+.avisos-lista li { display: grid; gap: 6px; padding: 14px 0; border-top: 1px solid var(--linha); }
+.avisos-lista li:first-child { border-top: 0; }
+.avisos-lista li.nao-lida { border-left: 3px solid var(--marca); padding-left: 10px; }
+.avisos-lista .msg { color: var(--tinta-2); font-size: 0.84rem; }
+.avisos-lista .botao { justify-self: start; }
 
 /* ---------- fatura explicável (o elemento de destaque) ----------
    Card no padrão dos demais; o ar de conta vem do conteúdo: linhas
@@ -416,4 +442,14 @@ tr.selecionada td:first-child { box-shadow: inset 3px 0 0 var(--marca); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+}
+
+/* impressão / PDF: só a fatura explicável, igual à tela */
+@media print {
+  @page { margin: 16mm; }
+  body, .app { background: #fff; }
+  .app, .grade, .pilha { display: block; }
+  .lateral, .cabecalho, .bloco, .projecao, .aviso.neutro, .botao { display: none !important; }
+  .conteudo { padding: 0; max-width: none; }
+  .fatura { border: 0; box-shadow: none; padding: 0; break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }

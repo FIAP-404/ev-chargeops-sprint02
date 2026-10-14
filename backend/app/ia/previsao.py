@@ -83,6 +83,13 @@ def _matriz(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(X)
 
 
+def _erro_semanal_pct(previsto: np.ndarray, real: np.ndarray) -> float | None:
+    """Erro médio em % do total de cada semana; None se alguma semana de teste não teve chegadas."""
+    if (real == 0).any():
+        return None
+    return round(float(np.mean(np.abs(previsto - real) / real) * 100), 1)
+
+
 class PrevisorDemanda:
     def __init__(self):
         self.modelo: PoissonRegressor | None = None
@@ -119,8 +126,8 @@ class PrevisorDemanda:
             "semanas_backtest": SEMANAS_BACKTEST,
             "mae_por_hora_modelo": round(float(np.mean(np.abs(prev - teste["chegadas"]))), 4),
             "mae_por_hora_baseline": round(float(np.mean(np.abs(prev_base - teste["chegadas"]))), 4),
-            "erro_semanal_medio_pct_modelo": round(float(np.mean(np.abs(semanal_prev - semanal_real) / semanal_real) * 100), 1),
-            "erro_semanal_medio_pct_baseline": round(float(np.mean(np.abs(semanal_base - semanal_real) / semanal_real) * 100), 1),
+            "erro_semanal_medio_pct_modelo": _erro_semanal_pct(semanal_prev, semanal_real),
+            "erro_semanal_medio_pct_baseline": _erro_semanal_pct(semanal_base, semanal_real),
         }
 
         # modelo final com todo o histórico

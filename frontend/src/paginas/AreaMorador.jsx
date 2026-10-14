@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import { useApi } from "../api";
+import { api, useApi } from "../api";
 import FaturaExplicavel from "../componentes/FaturaExplicavel";
 import { StatusCobranca, textoStatusFinal } from "../componentes/Status";
 import { brl, dataHora, duracao, kwh, nomeMes, nomeMesTitulo } from "../formatos";
 import { ErroApi } from "./PainelGestor";
+
+// avisos mostrados de início; os demais ficam atrás de "Ver todos"
+const AVISOS_RECENTES = 5;
 
 /**
  * Área do morador. No protótipo não há login: o seletor simula qual morador
@@ -13,6 +16,8 @@ export default function AreaMorador() {
   const usuarios = useApi("/usuarios");
   const [usuarioId, setUsuarioId] = useState(null);
   const [faturaAberta, setFaturaAberta] = useState(null);
+  const [erroAviso, setErroAviso] = useState(null);
+  const [todosAvisos, setTodosAvisos] = useState(false);
 
   useEffect(() => {
     if (usuarios.dados && !usuarioId) {
@@ -22,7 +27,23 @@ export default function AreaMorador() {
   }, [usuarios.dados, usuarioId]);
 
   const painel = useApi(usuarioId ? `/usuarios/${usuarioId}/painel` : null);
-  useEffect(() => setFaturaAberta(null), [usuarioId]);
+  const avisos = useApi(usuarioId ? `/usuarios/${usuarioId}/notificacoes` : null);
+  useEffect(() => {
+    setFaturaAberta(null);
+    setErroAviso(null);
+    setTodosAvisos(false);
+  }, [usuarioId]);
+
+  async function marcarComoLida(aviso) {
+    setErroAviso(null);
+    try {
+      await api(`/notificacoes/${aviso.id}/lida`, { metodo: "POST" });
+      avisos.recarregar();
+      painel.recarregar();
+    } catch (err) {
+      setErroAviso(err.message);
+    }
+  }
 
   if (usuarios.erro) return <ErroApi erro={usuarios.erro} />;
   const moradores = (usuarios.dados ?? []).filter((u) => u.unidade);
@@ -52,6 +73,46 @@ export default function AreaMorador() {
       ) : (
         <div className="grade grade-3-2">
           <div className="pilha">
+            <section className="bloco" aria-labelledby="t-avisos">
+              <header>
+                <h2 id="t-avisos">Avisos</h2>
+                {p.notificacoes_nao_lidas > 0 && (
+                  <span className="selo atencao">
+                    {p.notificacoes_nao_lidas} {p.notificacoes_nao_lidas === 1 ? "não lido" : "não lidos"}
+                  </span>
+                )}
+              </header>
+              {avisos.erro ? (
+                <ErroApi erro={avisos.erro} />
+              ) : !avisos.dados ? (
+                <p className="vazio">Carregando…</p>
+              ) : avisos.dados.length === 0 ? (
+                <p className="vazio">Nenhum aviso.</p>
+              ) : (
+                <ul className="avisos-lista">
+                  {(todosAvisos ? avisos.dados : avisos.dados.slice(0, AVISOS_RECENTES)).map((a) => (
+                    <li key={a.id} className={a.lida ? "" : "nao-lida"}>
+                      <div>
+                        <strong>{a.titulo}</strong> <span className="mudo">{dataHora(a.criado_em)}</span>
+                      </div>
+                      <p className="msg">{a.mensagem}</p>
+                      {!a.lida && (
+                        <button className="botao secundario" onClick={() => marcarComoLida(a)}>
+                          Marcar como lida
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {avisos.dados?.length > AVISOS_RECENTES && (
+                <button className="botao secundario" aria-expanded={todosAvisos} onClick={() => setTodosAvisos(!todosAvisos)}>
+                  {todosAvisos ? "Ver menos" : `Ver todos (${avisos.dados.length})`}
+                </button>
+              )}
+              {erroAviso && <p className="erro">{erroAviso}</p>}
+            </section>
+
             {p.projecao_ia && (
               <section className="projecao" aria-labelledby="t-proj">
                 <h2 id="t-proj" style={{ marginBottom: 6 }}>Previsão para o fechamento de {nomeMes(p.mes).split(" ")[0]}</h2>
@@ -87,7 +148,10 @@ export default function AreaMorador() {
                       {p.sessoes.map((s) => (
                         <tr key={s.id}>
                           <td>{dataHora(s.inicio_em)}</td>
-                          <td>{s.veiculo?.split(" (")[0] ?? "—"}</td>
+                          <td>
+                            {s.veiculo?.split(" (")[0] ?? "—"}
+                            <div className="mudo">{s.metodo_identificacao === "app_qr" ? "via app" : "via RFID"}</div>
+                          </td>
                           <td className="num">{kwh(s.kwh_entregue)}</td>
                           <td className="num">
                             {duracao(s.duracao_min)}
@@ -167,6 +231,9 @@ export default function AreaMorador() {
                 pendentes={p.fatura_parcial.sessoes_pendentes.length}
               />
             )}
+            <button className="botao secundario" onClick={() => window.print()}>
+              Imprimir / salvar PDF
+            </button>
           </div>
         </div>
       )}
