@@ -8,7 +8,10 @@ from sqlalchemy import select
 
 from app import models as m
 from app.database import get_db
+from app.ia import servico as ia
 from app.main import app
+
+from .test_ia_modelo import historico
 
 
 @pytest.fixture
@@ -190,3 +193,17 @@ def test_avisos_do_morador_listar_e_marcar_como_lida(cliente):
     assert cliente.post("/notificacoes/999999/lida").status_code == 404
     assert cliente.get("/usuarios/999999/notificacoes").status_code == 404
     assert cliente.get(f"/usuarios/{sessao['usuario_id']}/notificacoes", params={"limite": 0}).status_code == 422
+
+
+def test_status_da_ia_em_cold_start(cliente):
+    anomalias = cliente.get("/ia/status").json()["anomalias"]
+    assert anomalias["cold_start"] is True and anomalias["treinado"] is False
+    assert anomalias["minimo_sessoes"] == 40 and anomalias["sessoes_elegiveis"] == 0
+
+
+def test_gerar_faturas_retreina_a_ia(cliente, db):
+    historico(db)
+    r = cliente.post("/faturas/gerar", params={"mes": "2026-08"})
+    assert r.status_code == 200
+    assert ia.detector().treinado
+    assert cliente.get("/ia/status").json()["anomalias"]["cold_start"] is False
