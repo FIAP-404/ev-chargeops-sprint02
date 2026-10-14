@@ -248,12 +248,13 @@ def treinar_modelos(db: Session, agora: datetime | None = None) -> dict:
 
 
 def treinar_se_necessario(db: Session) -> dict | None:
-    """Treino na subida da API: só quando não há modelo salvo e o histórico já basta.
+    """Treino na subida da API: só quando não há detector salvo e o histórico já basta.
 
     Sem isso, um banco com histórico mas sem os arquivos dos modelos (cópia
     nova, pasta de dados limpa) ficaria só com as regras até a próxima fatura.
+    Só a falta do previsor (menos de 8 semanas) não dispara treino a cada subida.
     """
-    if ARQ_DETECTOR.exists() and ARQ_PREVISOR.exists():
+    if ARQ_DETECTOR.exists():
         return None
     if len(base_sessoes(db)) < MIN_SESSOES_TREINO:
         return None

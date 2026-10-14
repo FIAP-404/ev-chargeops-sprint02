@@ -29,8 +29,9 @@ def gerar(mes: str, db: Session = Depends(get_db)):
     # fechou o mês: os modelos aprendem com as sessões que acabaram de ser liberadas/faturadas.
     # Fica aqui e não em gerar_faturas() porque o simulador retreina com o relógio simulado.
     try:
-        ia.treinar_modelos(db)
-        ia.atualizar_alertas_capacidade(db)
+        info = ia.treinar_modelos(db)
+        if info["demanda"]["treinado"]:
+            ia.atualizar_alertas_capacidade(db)
     except Exception:  # a fatura já foi gerada; o retreino tenta de novo no próximo mês
         db.rollback()
         log.exception("retreino da IA após gerar as faturas falhou")
