@@ -134,3 +134,17 @@ def test_listar_sessoes_mes_invalido_400(cliente):
     assert cliente.get("/dashboard/resumo", params={"mes": "xx"}).status_code == 400
     usuario = next(u for u in cliente.get("/usuarios").json() if u["unidade"])
     assert cliente.get(f"/usuarios/{usuario['id']}/painel", params={"mes": "2026-13"}).status_code == 400
+
+
+def test_listar_faturas_mes_invalido_400(cliente):
+    assert cliente.get("/faturas", params={"mes": "xx"}).status_code == 400
+    assert cliente.get("/faturas", params={"mes": "2026-08"}).status_code == 200
+
+
+def test_csv_ordena_unidades_pelo_numero(cliente):
+    cliente.post("/faturas/gerar", params={"mes": "2026-08"})
+    r = cliente.get("/faturas/exportar.csv", params={"mes": "2026-08"})
+    unidades = [linha.split(";")[0] for linha in r.content.decode("utf-8-sig").splitlines()[1:]]
+    chave = [(u.split("-")[0], int(u.split("-")[1])) for u in unidades]
+    assert chave == sorted(chave)
+    assert unidades.index("A-302") < unidades.index("A-1204")

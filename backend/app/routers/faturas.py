@@ -5,7 +5,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import Integer, cast, select
 from sqlalchemy.orm import Session
 
 from app import models as m
@@ -26,10 +26,16 @@ def gerar(mes: str, db: Session = Depends(get_db)):
     return [fatura_dict(f) for f in faturas]
 
 
+def _validar_mes(mes: str) -> None:
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes):
+        raise HTTPException(400, "mes deve estar no formato AAAA-MM")
+
+
 @router.get("/faturas")
 def listar(mes: str | None = None, unidade_id: int | None = None, db: Session = Depends(get_db)):
     q = select(m.Fatura).order_by(m.Fatura.mes_referencia.desc(), m.Fatura.valor_total.desc())
     if mes:
+        _validar_mes(mes)
         q = q.where(m.Fatura.mes_referencia == mes)
     if unidade_id:
         q = q.where(m.Fatura.unidade_id == unidade_id)
@@ -45,11 +51,11 @@ def _num(valor: float, casas: int = 2) -> str:
 @router.get("/faturas/exportar.csv")
 def exportar_csv(mes: str, db: Session = Depends(get_db)):
     """Faturas do mês em CSV, para a administradora lançar no boleto do condomínio."""
-    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", mes):
-        raise HTTPException(400, "mes deve estar no formato AAAA-MM")
+    _validar_mes(mes)
+    # numero é texto: ordena como número para A-302 vir antes de A-1204
     faturas = db.scalars(
         select(m.Fatura).join(m.Unidade).where(m.Fatura.mes_referencia == mes)
-        .order_by(m.Unidade.bloco, m.Unidade.numero)
+        .order_by(m.Unidade.bloco, cast(m.Unidade.numero, Integer), m.Unidade.numero)
     ).all()
     if not faturas:
         raise HTTPException(404, "Nenhuma fatura gerada para este mês")
