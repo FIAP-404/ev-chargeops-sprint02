@@ -58,17 +58,19 @@ Pré-requisitos: Python 3.11 ou superior e Node.js 18 ou superior.
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate          # Linux/macOS; no Windows, ver abaixo
 pip install -r requirements.txt
 
-# gera o cenário das evidências (27 semanas até 13/10/2026 15:00), fecha as faturas e treina a IA (~15 s)
-python -m simulador.gerar_sessoes --ate 2026-10-13T15:00
+# gera 27 semanas de uso até agora, fecha as faturas e treina a IA (~15 s)
+python -m simulador.gerar_sessoes
 
 # sobe a API em http://localhost:8000 (documentação interativa em /docs)
 uvicorn app.main:app --reload
 ```
 
-Com a data fixa, os números deste README, do notebook e de `docs/evidencias/` saem iguais em qualquer dia; sem `--ate`, o histórico vai até agora e os números mudam.
+No Windows, ative o ambiente com `source .venv/Scripts/activate` no Git Bash ou `.venv\Scripts\Activate.ps1` no PowerShell. Se o PowerShell bloquear o script, rode antes `Set-ExecutionPolicy -Scope Process Bypass` (vale só para aquela janela). Os demais comandos são iguais.
+
+Sem `--ate`, o histórico termina no momento atual e as telas, que abrem no mês corrente, já mostram dados: é o modo para explorar o protótipo. Para reproduzir os números deste README, do notebook e de `docs/evidencias/`, gere o cenário com data fixa (`python -m simulador.gerar_sessoes --ate 2026-10-13T15:00`) e escolha outubro de 2026 no seletor de mês do painel do gestor. A Área do morador mostra sempre o mês corrente; as faturas dos meses anteriores ficam na lista.
 
 Depois de atualizar o repositório, rode o simulador de novo: ele recria o banco (`backend/data/evchargeops.db`) com as colunas novas (`carregadores.qr_token`, `sessoes_recarga.metodo_identificacao`). Um banco gerado por uma versão anterior não ganha essas colunas sozinho e a API falha ao ler as sessões.
 
@@ -90,12 +92,16 @@ O Vite repassa as chamadas `/api/*` para `http://localhost:8000`. Se a API estiv
 
 ```bash
 cd backend
-python -m pytest -v                # 96 testes: rateio, fluxo de sessão, casos de borda, API, IA, SEMS e OCPP
+python -m pytest -v                # 98 testes: rateio, fluxo de sessão, casos de borda, API, IA, SEMS e OCPP
 
 cd ..
-pip install nbformat nbclient ipykernel matplotlib
-python scripts/gerar_notebook.py   # reexecuta notebooks/avaliacao_ia.ipynb
+pip install playwright nbformat nbclient ipykernel matplotlib
+python -m playwright install chromium
+python scripts/gerar_notebook.py        # reexecuta notebooks/avaliacao_ia.ipynb
+python scripts/capturar_evidencias.py   # capturas de tela, PDF e CSV (API e front-end rodando)
 ```
+
+Os dois scripts esperam o cenário com `--ate 2026-10-13T15:00`. As capturas simulam duas recargas pela tela, que ficam gravadas no banco; para voltar ao cenário publicado, rode o simulador de novo.
 
 ### 2.4 Opções do simulador
 
@@ -168,14 +174,14 @@ flowchart LR
 
 | Etapa (Sprint 01, seção 5.2) | Rota | O que acontece |
 |---|---|---|
-| Usuário se identifica | `POST /sessoes/iniciar` (RFID) ou `POST /sessoes/iniciar-app` (QR + usuário do app) | RFID: o código do cartão vira hash SHA-256 e é buscado nas credenciais; cartão desconhecido abre a sessão, que vai para a quarentena. App: o morador lê o QR Code colado no carregador e o app envia o token com o usuário; o veículo é deduzido quando ele tem só um. O app nunca abre sessão anônima: QR inválido, usuário inativo ou sem unidade devolvem 403 e veículo de outro usuário (ou não informado, para quem tem dois) devolve 422. Nos dois caminhos, carregador ocupado devolve 409 e registra a tentativa (demanda não atendida); início sobreposto a uma sessão já encerrada ou leitura inicial abaixo da última do medidor devolvem 422. |
+| Usuário se identifica | `POST /sessoes/iniciar` (RFID) ou `POST /sessoes/iniciar-app` (QR + usuário do app) | RFID: o código do cartão vira hash SHA-256 e é buscado nas credenciais; cartão desconhecido abre a sessão em quarentena. App: o app envia o token do QR Code colado no carregador e o usuário; com um só veículo, ele é deduzido. O app nunca abre sessão anônima (403 para QR inválido ou usuário inativo/sem unidade, 422 para veículo de outro usuário ou não escolhido). Carregador ocupado: 409, e a tentativa vira demanda não atendida. Início sobreposto a outra sessão ou leitura abaixo da última: 422. |
 | Telemetria | `POST /sessoes/{id}/telemetria` | Grava potência, leitura do medidor e status. Leitura que "anda para trás" é ignorada e vira evento de erro; horário anterior ao início da sessão devolve 422. `carga_completa` marca o início da ociosidade. |
 | Encerramento | `POST /sessoes/{id}/encerrar` | kWh = leitura final − inicial. Sem leitura final (falha de comunicação), usa o último dado válido. Calcula duração, ociosidade, potência média e status final. Horário ou leitura final anteriores à última telemetria devolvem 422. |
 | Decisão de cobrança | automática | Sem identificação: `quarentena`. Identificada: a IA avalia e devolve `liberada` ou `revisao_ia`. |
-| Usuário recebe resumo (passo 9) | automática; `GET /usuarios/{id}/notificacoes`, `POST /notificacoes/{id}/lida` | Resumo com kWh, duração, ociosidade, valor da sessão e situação (liberada ou em revisão, com o motivo). Ociosidade longa gera um aviso extra; a decisão do gestor também avisa o morador. Sessão em quarentena não notifica; se o gestor a atribuir a um morador, ele recebe o resumo nesse momento. |
+| Usuário recebe resumo (passo 9) | automática; `GET /usuarios/{id}/notificacoes`, `POST /notificacoes/{id}/lida` | Resumo com kWh, duração, ociosidade, valor da sessão e situação (liberada ou em revisão, com o motivo). Ociosidade longa e a decisão do gestor geram avisos próprios. Quarentena não notifica: o morador recebe o resumo quando o gestor atribui a sessão a ele. |
 | Revisão do gestor | `POST /sessoes/{id}/revisao` | Liberar (com crédito opcional, limitado ao valor da sessão, e, na quarentena, atribuindo um morador) ou não cobrar. |
-| Fechamento do mês | `POST /faturas/gerar?mes=AAAA-MM` | Gera a fatura de cada unidade com as sessões liberadas do mês (o mês é o do início da sessão). Sessões em revisão ou ainda abertas são contadas como pendências (`fechada_com_pendencias`). Os parâmetros usados ficam gravados na fatura, e gerar o mesmo mês de novo os reaproveita. Encerrar ou revisar depois uma sessão de mês já faturado marca a fatura como `desatualizada`. Depois de gravar as faturas, a IA é retreinada com o histórico. |
-| Carregador OCPP conecta | `WS /ocpp/{carregador_id}` (subprotocolo `ocpp1.6`) | StartTransaction abre a sessão (`transactionId` = id da sessão), MeterValues vira telemetria (Wh → kWh, W → kW), StatusNotification `SuspendedEV` marca carga completa e `Faulted` registra erro, StopTransaction encerra. O Stop sempre fecha a sessão: hora ou medidor inconsistentes caem no último dado válido. Valores por fase são ignorados (vale o total) e datas sem fuso são tratadas como UTC, como manda o OCPP. |
+| Fechamento do mês | `POST /faturas/gerar?mes=AAAA-MM` | Fatura de cada unidade com as sessões liberadas do mês (o do início da sessão). Sessões em revisão ou abertas viram pendências (`fechada_com_pendencias`). Os parâmetros usados ficam gravados e valem para regerar o mês. Encerrar ou revisar depois uma sessão do mês marca a fatura como `desatualizada`. Em seguida, a IA é retreinada. |
+| Carregador OCPP conecta | `WS /ocpp/{carregador_id}` (subprotocolo `ocpp1.6`) | StartTransaction abre a sessão (`transactionId` = id da sessão), MeterValues vira telemetria (Wh → kWh, W → kW), `SuspendedEV` marca carga completa, `Faulted` registra erro e StopTransaction encerra, sempre: hora ou medidor inconsistentes caem no último dado válido. Vale o total, não os valores por fase; data sem fuso é UTC. |
 | Leitura do SEMS | `POST /integracoes/sems/sincronizar?carregador_id=` | Lê o carregador no SEMS e grava a leitura na sessão aberta. Sem `EVCO_SEMS_USUARIO`, `EVCO_SEMS_SENHA` e `EVCO_SEMS_PLANTA_ID` responde 503; falha do SEMS responde 502. |
 
 Outras rotas: `GET /sessoes`, `GET /faturas`, `GET /faturas/exportar.csv?mes=AAAA-MM`, `GET/PUT /parametros`, `GET /dashboard/resumo` (KPIs do mês, consumo por unidade e por carregador), `GET /dashboard/historico-mensal`, `GET /usuarios/{id}/painel`, `GET /ia/status`, `POST /ia/treinar`, `GET /ia/previsao-capacidade`, `GET /ia/alertas`. Mês fora do formato AAAA-MM devolve 400. Todas estão documentadas em `http://localhost:8000/docs`.
@@ -195,9 +201,9 @@ Valor da unidade no mês =
 
 - Dinheiro é calculado com `Decimal` e cada parcela é arredondada em centavos (`ROUND_HALF_UP`). Assim 1,995 vira 2,00, como no exemplo da Sprint 01.
 - O total nunca fica negativo, mesmo com crédito maior que o valor.
-- O crédito que o gestor concede numa sessão tem teto: o valor da própria sessão (energia + perdas + ociosidade, sem a taxa mensal de infraestrutura), calculado pelo mesmo motor de rateio. A API recusa crédito acima disso (`test_fluxo_sessao.py`).
+- O crédito que o gestor concede numa sessão tem teto: o valor da própria sessão (energia + perdas + ociosidade, sem a taxa mensal de infraestrutura), calculado pelo mesmo motor e com os parâmetros do mês da sessão. A API recusa crédito acima disso (`test_fluxo_sessao.py`).
 - Cada fatura grava a **memória de cálculo**: o texto de cada parcela ("42 kWh × R$ 0,95/kWh"). É isso que a tela mostra ao morador.
-- **Regerar não reprecifica.** A fatura guarda os parâmetros usados em `memoria_calculo.parametros`, e uma nova geração do mesmo mês reaproveita esses parâmetros. Uma tarifa nova só vale para meses que ainda não foram fechados.
+- **Regerar não reprecifica.** A fatura guarda os parâmetros usados em `memoria_calculo.parametros`, e uma nova geração do mesmo mês reaproveita esses parâmetros. Uma sessão do mês liberada depois do fechamento também é avaliada com eles (aviso ao morador, teto do crédito, painel). Uma tarifa nova só vale para meses que ainda não foram fechados.
 - **Datas com fuso.** A API aceita datas com fuso (`2026-08-03T22:10:00Z`, `2026-08-03T19:10:00-03:00`) e as converte para o horário local do servidor. Datas sem fuso já são tratadas como horário local.
 
 ### 4.2 Regras de exceção (Sprint 01, seção 5.4)
@@ -258,18 +264,7 @@ Com histórico ralo (alguma das 4 semanas de teste sem nenhuma chegada), a previ
 
 ### 5.3 Projeção da fatura
 
-Combina o ritmo de consumo do mês atual com a média das últimas 8 semanas. O peso do mês atual cresce com os dias decorridos. Essa fórmula foi escolhida por backtest (4 meses × dias 8, 15 e 22): erro médio de **24,8 kWh**, contra 26,8 kWh usando só o histórico e 27,8 kWh com a regra de três. A tela deixa claro que é uma estimativa e que o valor cobrado é sempre o medido.
-
-Erro médio absoluto (kWh) por dia do mês em que a projeção foi feita:
-
-| Dia | Mistura (sistema) | Só histórico | Regra de três |
-|---|---|---|---|
-| 8 | 37,1 | 36,7 | 46,6 |
-| 15 | 23,5 | 27,8 | 22,7 |
-| 22 | 13,8 | 15,8 | 14,1 |
-| Geral | 24,8 | 26,8 | 27,8 |
-
-No dia 8 a mistura não supera o histórico; a amostra é pequena (4 meses). No dia 15 a regra de três fica um pouco à frente.
+Combina o ritmo de consumo do mês atual com a média das últimas 8 semanas; o peso do mês cresce com os dias decorridos. A fórmula foi escolhida por backtest (4 meses, projeções nos dias 8, 15 e 22): erro médio de **24,8 kWh**, contra 26,8 kWh usando só o histórico e 27,8 kWh com a regra de três. No dia 8 a mistura ainda não supera o histórico (37,1 contra 36,7 kWh) e no dia 15 a regra de três fica um pouco à frente; a tabela por dia está no notebook. Por isso a tela apresenta o valor como estimativa: o cobrado é sempre o medido.
 
 ## 6. Evidências de funcionamento
 
@@ -288,7 +283,8 @@ No dia 8 a mistura não supera o histórico; a amostra é pequena (4 meses). No 
 | CSV do mês para a administradora | [`docs/evidencias/faturas-2026-09.csv`](docs/evidencias/faturas-2026-09.csv) |
 | Caixa de avisos do morador | [`docs/evidencias/08-avisos-morador.png`](docs/evidencias/08-avisos-morador.png) |
 | Consumo por carregador no painel do gestor | [`docs/evidencias/09-consumo-por-carregador.png`](docs/evidencias/09-consumo-por-carregador.png) |
-| Vídeo de demonstração (2-3 min) | LINK_DO_VIDEO (a gravar pela equipe) |
+| Recarga iniciada pelo app (QR Code), liberada para o rateio | [`docs/evidencias/10-simular-qr.png`](docs/evidencias/10-simular-qr.png) |
+| Vídeo do pitch com demonstração do protótipo (5 min) | LINK_DO_VIDEO (pendente: a equipe grava e cola o link aqui) |
 
 As capturas, a fatura em PDF e o CSV são gerados por `scripts/capturar_evidencias.py`, que usa Playwright com a API e o front-end rodando, sobre o cenário do simulador (`--ate 2026-10-13T15:00`, seed 42).
 
@@ -316,11 +312,15 @@ As capturas, a fatura em PDF e o CSV são gerados por `scripts/capturar_evidenci
 
 ![Recarga simulada retida pela IA](docs/evidencias/04-simular-recarga.png)
 
+**Recarga pelo app.** A Marina lê o QR Code do carregador no app; a recarga normal passa pela IA e é liberada para o rateio.
+
+![Recarga iniciada pelo app](docs/evidencias/10-simular-qr.png)
+
 **Regras de rateio.** Parâmetros aprovados pelo condomínio, com o exemplo de 42 kWh recalculado ao vivo.
 
 ![Regras de rateio](docs/evidencias/05-regras-rateio.png)
 
-**Área do morador no celular.**
+**Área do morador no celular** (primeira tela, como aparece no aparelho).
 
 <img src="docs/evidencias/06-area-morador-celular.png" alt="Área do morador no celular" width="320">
 
@@ -337,10 +337,8 @@ As capturas, a fatura em PDF e o CSV são gerados por `scripts/capturar_evidenci
 - **Sessões já apontadas pela IA não treinam o modelo**, mesmo que o gestor libere a cobrança. Sem isso, cada cabo defeituoso liberado ensinava ao modelo que aquele padrão é normal.
 - **Retreino no fechamento do mês.** `POST /faturas/gerar` retreina os modelos depois de gravar as faturas. Se o treino falhar, a fatura continua gerada e o retreino acontece no próximo fechamento. Na subida da API, um banco com histórico mas sem modelo salvo é treinado na hora.
 - **Tentativas com carregador ocupado viram dado.** Com um único carregador, só as sessões esconderiam a demanda reprimida, e a previsão de capacidade ficaria cega para a fila.
-- **Identidade visual inspirada na GoodWe.** Um único vermelho de marca, usado só em ações, item ativo e energia; neutros sem matiz; botões em pílula com o gradiente coral → vermelho. Os gráficos seguem a convenção das ilustrações da GoodWe: vermelho para energia medida e violeta para previsões da IA. O status crítico é vinho, para não competir com o vermelho de ação.
-- **Botões com regras de design system** (Material 3, Carbon, Polaris), documentadas em `estilos.css`: no máximo um primário por grupo, altura única de 40 px, desabilitado neutro e sempre explicado.
+- **Identidade visual inspirada na GoodWe.** Um único vermelho de marca, só em ações, item ativo e energia; nos gráficos, vermelho para energia medida e violeta para previsões da IA. As regras dos botões (um primário por grupo, altura única, desabilitado sempre explicado) estão em `estilos.css`, e a fonte é servida pelo próprio app para funcionar sem internet.
 - **Campo de dinheiro no padrão dos apps bancários.** Só aceita dígitos e os centavos entram pela direita (1124 → R$ 11,24); o valor é guardado em centavos inteiros.
-- **Fonte servida pelo próprio app** (`@fontsource-variable/montserrat`), para funcionar sem internet.
 
 ## 8. Desvios em relação à Sprint 01 e justificativas
 
@@ -362,6 +360,7 @@ As capturas, a fatura em PDF e o CSV são gerados por `scripts/capturar_evidenci
 | Esquema de dados da seção 5.6 | Mantido, com acréscimos: `usuario.unidade_id`, `veiculo.potencia_ac_max_kw`, `credencial.veiculo_id`, `carregador.qr_token`; na sessão, campos de cobrança, IA e `metodo_identificacao`; na fatura, `qtd_sessoes`, `valor_perdas`, `sessoes_pendentes` e `memoria_calculo` (parcelas e parâmetros usados); tabelas `parametros_rateio`, `alertas_ia`, `tentativas_ocupado` e `notificacoes`. O perfil `visitante` não foi implementado | Cada acréscimo atende a uma regra: ligar sessão à unidade, saber a potência esperada, separar veículos, registrar o meio de identificação, explicar e congelar o cálculo da fatura, reter sessões, medir a demanda reprimida e avisar o morador. Visitante sem cadastro cai na quarentena (cartão desconhecido), e o gestor decide a quem atribuir. |
 | Taxa de ociosidade "dependendo de regra interna" | Ativa no cenário simulado (30 min de tolerância, R$ 6/h) e desligável | Mostra a regra funcionando; o valor real depende de aprovação do condomínio. |
 | Roteiro de pitch de 3 minutos | Roteiro de 5 minutos | O enunciado da Sprint 02 define vídeo de 5 minutos na prova presencial. |
+| Deploy em Render, Railway, Vercel ou Docker local (Tecnologias propostas) | Execução local: API com uvicorn e front-end com Vite, sem deploy nem Docker | O protótipo roda com dados simulados na máquina de quem avalia, com os passos da seção 2. Sem login (linha acima), uma API publicada deixaria qualquer pessoa revisar sessões e mudar as regras de rateio, e numa hospedagem sem disco persistente o SQLite e os modelos treinados se perderiam a cada reinício. O deploy entra junto com a autenticação e o PostgreSQL. |
 
 ## 9. Limitações e próximos passos
 
@@ -402,8 +401,8 @@ backend/
     integracoes/
       sems.py           adaptador GoodWe SEMS (não validado)
       ocpp16.py         tradutor OCPP 1.6J (subconjunto, sem teste em hardware)
-  simulador/            gerador de 6 meses de uso
-  tests/                96 testes (pytest)
+  simulador/            gerador de 27 semanas de uso
+  tests/                98 testes (pytest)
 frontend/
   src/paginas/          telas (gestor, faturas, morador, simulação, regras)
   src/componentes/      fatura explicável, gráficos, mapa de calor, decisões, campo em reais
