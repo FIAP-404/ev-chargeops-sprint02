@@ -51,6 +51,12 @@ def hash_rfid(codigo: str) -> str:
     return hashlib.sha256(codigo.strip().upper().encode()).hexdigest()
 
 
+def para_hora_local(dt: datetime | None) -> datetime | None:
+    """Datas com fuso (ex.: "...Z" ou "...-03:00") viram horário local sem fuso,
+    o mesmo formato de datetime.now() usado no resto do sistema."""
+    return dt.astimezone().replace(tzinfo=None) if dt is not None and dt.tzinfo else dt
+
+
 def _evento(db: Session, sessao: m.SessaoRecarga, ts: datetime, tipo: str, payload: dict) -> None:
     db.add(m.EventoSessao(sessao_id=sessao.id, timestamp=ts, tipo_evento=tipo, payload_json=json.dumps(payload)))
 
@@ -77,7 +83,7 @@ def iniciar_sessao(
     inicio_em: datetime | None = None,
     leitura_inicial_kwh: float = 0.0,
 ) -> m.SessaoRecarga:
-    inicio_em = inicio_em or datetime.now()
+    inicio_em = para_hora_local(inicio_em) or datetime.now()
     carregador = db.get(m.Carregador, carregador_id)
     if carregador is None:
         raise ErroSessao(f"Carregador '{carregador_id}' não encontrado", 404)
@@ -133,6 +139,7 @@ def registrar_telemetria(
     o HCA G2/SEMS reporta. O kWh da sessão é calculado pela diferença entre a
     leitura final e a inicial.
     """
+    timestamp = para_hora_local(timestamp)
     sessao = _sessao_aberta(db, sessao_id)
 
     if energia_acumulada_kwh < (sessao.leitura_final_kwh or 0):
@@ -173,7 +180,7 @@ def encerrar_sessao(
         raise ErroSessao(f"Motivo inválido. Use um destes: {sorted(MOTIVOS_ENCERRAMENTO)}")
 
     sessao = _sessao_aberta(db, sessao_id)
-    fim_em = fim_em or datetime.now()
+    fim_em = para_hora_local(fim_em) or datetime.now()
     if fim_em < sessao.inicio_em:
         raise ErroSessao("fim_em anterior ao início da sessão")
 
