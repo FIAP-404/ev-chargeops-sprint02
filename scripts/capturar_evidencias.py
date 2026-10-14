@@ -1,18 +1,21 @@
-"""Gera as capturas de tela de evidência (docs/evidencias/*.png), a fatura em
-PDF (07-fatura.pdf), a caixa de avisos do morador (08-avisos-morador.png) e o
-CSV do mês exportado pela tela de faturas.
+"""Gera as capturas de tela de evidência (docs/evidencias/01 a 06 .png), a fatura em
+PDF (07-fatura.pdf), a caixa de avisos do morador (08-avisos-morador.png), o
+consumo por carregador do painel do gestor (09-consumo-por-carregador.png) e o
+CSV do mês exportado pela tela de faturas (faturas-AAAA-MM.csv).
 
-Pré-requisitos: API em http://localhost:8000 e front-end em http://localhost:5173
-rodando sobre o banco do simulador.
+Pré-requisitos: API e front-end rodando sobre o banco do simulador
+(python -m simulador.gerar_sessoes --ate 2026-10-13T15:00). O front-end é lido
+em http://localhost:5173; para outro endereço, defina EVCO_FRONT_URL.
     pip install playwright && python -m playwright install chromium
     python scripts/capturar_evidencias.py
 """
+import os
 import sys
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-URL = "http://localhost:5173"
+URL = os.environ.get("EVCO_FRONT_URL", "http://localhost:5173").rstrip("/")
 PASTA = Path(__file__).resolve().parent.parent / "docs" / "evidencias"
 PASTA.mkdir(parents=True, exist_ok=True)
 
@@ -36,6 +39,14 @@ def main(largura: int = 1440) -> None:
             pagina.screenshot(path=PASTA / f"{nome}.png", full_page=True)
             print("ok", nome)
 
+        # consumo por carregador no painel do gestor
+        pagina.goto(f"{URL}/#/painel")
+        carregadores = pagina.locator("section[aria-labelledby='t-carregadores']")
+        carregadores.locator("tbody tr").first.wait_for()
+        pagina.wait_for_timeout(500)
+        carregadores.screenshot(path=PASTA / "09-consumo-por-carregador.png")
+        print("ok 09-consumo-por-carregador")
+
         # caixa de avisos do morador (resumo das recargas e ociosidade)
         pagina.goto(f"{URL}/#/morador")
         avisos = pagina.locator("section[aria-labelledby='t-avisos']")
@@ -57,7 +68,7 @@ def main(largura: int = 1440) -> None:
         # simulação ao vivo: recarga com cabo defeituoso, avaliada pela IA
         pagina.goto(f"{URL}/#/simular")
         pagina.get_by_label("Situação").select_option("cabo")
-        pagina.get_by_label("Cartão RFID").select_option("RFID-A0811-01")
+        pagina.get_by_role("combobox", name="Cartão RFID").select_option("RFID-A0811-01")
         pagina.get_by_role("button", name="Iniciar recarga").click()
         pagina.get_by_text("Sessão encerrada e avaliada pela IA").wait_for(timeout=60000)
         pagina.wait_for_timeout(500)
