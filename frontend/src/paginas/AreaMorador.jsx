@@ -5,6 +5,9 @@ import { StatusCobranca, textoStatusFinal } from "../componentes/Status";
 import { brl, dataHora, duracao, kwh, nomeMes, nomeMesTitulo } from "../formatos";
 import { ErroApi } from "./PainelGestor";
 
+// avisos mostrados de início; os demais ficam atrás de "Ver todos"
+const AVISOS_RECENTES = 5;
+
 /**
  * Área do morador. No protótipo não há login: o seletor simula qual morador
  * está acessando (ver "Desvios" no README).
@@ -14,6 +17,7 @@ export default function AreaMorador() {
   const [usuarioId, setUsuarioId] = useState(null);
   const [faturaAberta, setFaturaAberta] = useState(null);
   const [erroAviso, setErroAviso] = useState(null);
+  const [todosAvisos, setTodosAvisos] = useState(false);
 
   useEffect(() => {
     if (usuarios.dados && !usuarioId) {
@@ -27,6 +31,7 @@ export default function AreaMorador() {
   useEffect(() => {
     setFaturaAberta(null);
     setErroAviso(null);
+    setTodosAvisos(false);
   }, [usuarioId]);
 
   async function marcarComoLida(aviso) {
@@ -85,7 +90,7 @@ export default function AreaMorador() {
                 <p className="vazio">Nenhum aviso.</p>
               ) : (
                 <ul className="avisos-lista">
-                  {avisos.dados.map((a) => (
+                  {(todosAvisos ? avisos.dados : avisos.dados.slice(0, AVISOS_RECENTES)).map((a) => (
                     <li key={a.id} className={a.lida ? "" : "nao-lida"}>
                       <div>
                         <strong>{a.titulo}</strong> <span className="mudo">{dataHora(a.criado_em)}</span>
@@ -99,6 +104,11 @@ export default function AreaMorador() {
                     </li>
                   ))}
                 </ul>
+              )}
+              {avisos.dados?.length > AVISOS_RECENTES && (
+                <button className="botao secundario" aria-expanded={todosAvisos} onClick={() => setTodosAvisos(!todosAvisos)}>
+                  {todosAvisos ? "Ver menos" : `Ver todos (${avisos.dados.length})`}
+                </button>
               )}
               {erroAviso && <p className="erro">{erroAviso}</p>}
             </section>
