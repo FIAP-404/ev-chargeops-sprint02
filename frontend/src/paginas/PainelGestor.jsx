@@ -172,6 +172,45 @@ export default function PainelGestor() {
           </div>
         </div>
       )}
+
+      {r && (
+        <section className="bloco" style={{ marginTop: 20 }} aria-labelledby="t-carregadores">
+          <header>
+            <h2 id="t-carregadores">Consumo por carregador</h2>
+            <p>Valor das sessões sem a taxa de infraestrutura, que é cobrada por unidade</p>
+          </header>
+          <div className="tabela-rolagem">
+            <table>
+              <thead>
+                <tr>
+                  <th>Carregador</th>
+                  <th>Local</th>
+                  <th className="num">Sessões</th>
+                  <th className="num">Energia</th>
+                  <th className="num">Ocupação</th>
+                  <th className="num">Sem carregar</th>
+                  <th className="num">Procura não atendida</th>
+                  <th className="num">Valor das sessões</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.consumo_por_carregador.map((c) => (
+                  <tr key={c.carregador_id}>
+                    <td>{c.fabricante} {c.modelo}</td>
+                    <td>{c.localizacao}</td>
+                    <td className="num">{c.sessoes}</td>
+                    <td className="num">{kwh(c.kwh, 0)}</td>
+                    <td className="num">{num(c.ocupacao_pct, 0)}%</td>
+                    <td className="num">{duracaoHoras(c.minutos_ociosos)}</td>
+                    <td className="num">{c.tentativas_ocupado}</td>
+                    <td className="num">{brl(c.valor_sessoes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </>
   );
 }
