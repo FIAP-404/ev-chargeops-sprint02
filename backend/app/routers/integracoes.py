@@ -28,3 +28,5 @@ def sincronizar_sems(carregador_id: str = CARREGADOR_ID, db: Session = Depends(g
         raise HTTPException(502, f"Falha ao ler o SEMS: {erro}") from erro
     except ErroSessao as erro:
         raise HTTPException(erro.status_http, str(erro)) from erro
+    finally:
+        cliente.http.close()

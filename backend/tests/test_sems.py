@@ -1,6 +1,7 @@
 """Testes da normalização do SEMS com um retorno de exemplo (não é dado real)."""
 from datetime import datetime
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -43,6 +44,9 @@ def test_normaliza_watts_para_kw_e_traduz_status():
 class ClienteFalso:
     """Faz o papel do ClienteSEMS sem rede."""
 
+    def __init__(self):
+        self.http = httpx.Client()
+
     def leitura_carregador(self, planta_id):
         return LeituraCarregador(datetime(2026, 8, 3, 20, 10), 6.9, 1006.9, "carregando")
 
@@ -77,7 +81,8 @@ def test_rota_sems_sem_configuracao_responde_503(cliente, monkeypatch):
 
 
 def test_rota_sems_com_cliente_falso(cliente, monkeypatch):
-    monkeypatch.setattr(ClienteSEMS, "do_ambiente", lambda: ClienteFalso())
+    falso = ClienteFalso()
+    monkeypatch.setattr(ClienteSEMS, "do_ambiente", lambda: falso)
     monkeypatch.setenv("EVCO_SEMS_PLANTA_ID", "planta-lab")
     cliente.post("/sessoes/iniciar", json={
         "codigo_rfid": "RFID-A1204-01", "inicio_em": "2026-08-03T19:10:00", "leitura_inicial_kwh": 1000,
@@ -86,3 +91,4 @@ def test_rota_sems_com_cliente_falso(cliente, monkeypatch):
     assert r.status_code == 200
     assert r.json()["sessao_id"] is not None
     assert r.json()["energia_acumulada_kwh"] == pytest.approx(1006.9)
+    assert falso.http.is_closed

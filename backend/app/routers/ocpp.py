@@ -11,8 +11,10 @@ router = APIRouter(tags=["OCPP"])
 
 @router.websocket("/ocpp/{carregador_id}")
 async def conexao_ocpp(websocket: WebSocket, carregador_id: str, db: Session = Depends(get_db)):
-    # o OCPP-J exige que o carregador peça o subprotocolo da versão
+    # o OCPP-J exige que o carregador peça o subprotocolo da versão; sem ele, a spec
+    # manda completar o handshake sem subprotocolo e fechar em seguida
     if "ocpp1.6" not in websocket.scope.get("subprotocols", []):
+        await websocket.accept()
         await websocket.close(code=1002)
         return
     await websocket.accept(subprotocol="ocpp1.6")

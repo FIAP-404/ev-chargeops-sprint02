@@ -89,6 +89,24 @@ def test_meter_values_converte_wh_e_w(db):
     assert db.get(m.SessaoRecarga, transacao).leitura_final_kwh == pytest.approx(1006.2)
 
 
+def test_meter_values_ignora_valores_por_fase(db):
+    transacao = iniciar(db)
+    chamar(db, "MeterValues", {"connectorId": 1, "transactionId": transacao, "meterValue": [{
+        "timestamp": "2026-08-03T19:40:00Z",
+        "sampledValue": [
+            {"value": "1003100"},
+            {"value": "6200", "measurand": "Power.Active.Import", "unit": "W"},
+            {"value": "1001000", "phase": "L1"},
+            {"value": "2100", "measurand": "Power.Active.Import", "unit": "W", "phase": "L1"},
+        ],
+    }]})
+    sessao = db.get(m.SessaoRecarga, transacao)
+    assert sessao.leitura_final_kwh == pytest.approx(1003.1)
+    assert sessao.potencia_max_kw == pytest.approx(6.2)
+    tipos = db.scalars(select(m.EventoSessao.tipo_evento).where(m.EventoSessao.sessao_id == transacao)).all()
+    assert tipos == ["inicio", "telemetria"]
+
+
 def test_start_com_carregador_ocupado_responde_concurrent_tx(db):
     iniciar(db)
     r = chamar(db, "StartTransaction", {
@@ -121,6 +139,8 @@ def test_data_transfer_responde_not_supported(db):
 def test_frame_malformado_responde_formation_violation(db):
     r = json.loads(processar_texto(db, CARREGADOR, "isto não é json"))
     assert r[:3] == [4, "", "FormationViolation"]
+    aninhado = json.loads(processar_texto(db, CARREGADOR, "[" * 100000 + "]" * 100000))
+    assert aninhado[:3] == [4, "", "FormationViolation"]
     assert processar(db, CARREGADOR, [2, "7", "Heartbeat"])[:3] == [4, "7", "FormationViolation"]
     # respostas do carregador a CALLs nossos não têm resposta
     assert processar(db, CARREGADOR, [3, "9", {}]) is None
@@ -134,6 +154,18 @@ def test_campo_obrigatorio_ausente(db):
 def test_data_invalida_responde_type_constraint(db):
     r = chamar(db, "StartTransaction", {"connectorId": 1, "idTag": TAG, "meterStart": 0, "timestamp": "ontem"})
     assert r[:3] == [4, "1", "TypeConstraintViolation"]
+
+
+def test_tipo_errado_responde_type_constraint(db):
+    r = chamar(db, "StartTransaction", {
+        "connectorId": 1, "idTag": 1204, "meterStart": 0, "timestamp": "2026-08-03T19:10:00Z",
+    })
+    assert r[:3] == [4, "1", "TypeConstraintViolation"]
+
+
+def test_data_sem_fuso_e_tratada_como_utc(db):
+    transacao = iniciar(db, quando="2026-08-03T19:10:00")
+    assert db.get(m.SessaoRecarga, transacao).inicio_em == utc(19, 10)
 
 
 def test_regra_da_sessao_responde_property_constraint(db):
@@ -205,6 +237,14 @@ def test_status_faulted_registra_evento_erro(db):
     assert tipos == ["inicio", "erro"]
 
 
+def test_status_finishing_nao_marca_carga_completa(db):
+    transacao = iniciar(db)
+    chamar(db, "StatusNotification", {
+        "connectorId": 1, "errorCode": "NoError", "status": "Finishing", "timestamp": "2026-08-03T21:00:00Z",
+    })
+    assert db.get(m.SessaoRecarga, transacao).carga_completa_em is None
+
+
 def test_websocket_boot_notification(cliente):
     with cliente.websocket_connect(f"/ocpp/{CARREGADOR}", subprotocols=["ocpp1.6"]) as ws:
         assert ws.accepted_subprotocol == "ocpp1.6"
@@ -215,6 +255,9 @@ def test_websocket_boot_notification(cliente):
 
 
 def test_websocket_sem_subprotocolo_e_recusado(cliente):
-    with pytest.raises(WebSocketDisconnect):
-        with cliente.websocket_connect(f"/ocpp/{CARREGADOR}"):
-            pass
+    # a spec manda completar o handshake sem subprotocolo e fechar logo em seguida
+    with cliente.websocket_connect(f"/ocpp/{CARREGADOR}") as ws:
+        assert ws.accepted_subprotocol is None
+        with pytest.raises(WebSocketDisconnect) as fechamento:
+            ws.receive_text()
+    assert fechamento.value.code == 1002

@@ -48,7 +48,8 @@ MOTIVOS_OCPP = {
 }  # demais (Remote, HardReset, DeAuthorized, Other...) -> limite_operacional
 
 # status do conector no StatusNotification -> status_carregador da telemetria
-STATUS_OCPP = {"SuspendedEV": "carga_completa", "Finishing": "carga_completa", "Faulted": "erro"}
+# (Finishing não entra: quer dizer que a transação parou, não que a bateria encheu)
+STATUS_OCPP = {"SuspendedEV": "carga_completa", "Faulted": "erro"}
 
 MEDIDA_ENERGIA = "Energy.Active.Import.Register"  # medida padrão quando o measurand vem vazio
 MEDIDA_POTENCIA = "Power.Active.Import"
@@ -66,7 +67,7 @@ def processar_texto(db: Session, carregador_id: str, texto: str) -> str | None:
     """Mesma coisa que processar(), mas com o texto cru do websocket."""
     try:
         frame = json.loads(texto)
-    except json.JSONDecodeError:
+    except (ValueError, RecursionError):  # JSON inválido ou aninhado demais
         frame = None  # vira FormationViolation
     resposta = processar(db, carregador_id, frame)
     return None if resposta is None else json.dumps(resposta, ensure_ascii=False)
@@ -104,17 +105,25 @@ def processar(db: Session, carregador_id: str, frame) -> list | None:
 
 # --- conversões ---------------------------------------------------------------
 
-def _campo(payload: dict, nome: str):
+def _tipo(valor, tipo: type, nome: str):
+    if not isinstance(valor, tipo):
+        raise ErroOCPP("TypeConstraintViolation", f"Tipo inválido em {nome}: {valor!r}")
+    return valor
+
+
+def _campo(payload: dict, nome: str, tipo: type = object):
     if payload.get(nome) is None:
         raise ErroOCPP("OccurenceConstraintViolation", f"Campo obrigatório ausente: {nome}")
-    return payload[nome]
+    return _tipo(payload[nome], tipo, nome)
 
 
 def _data(valor) -> datetime:
     try:
-        return para_hora_local(datetime.fromisoformat(valor))
+        dt = datetime.fromisoformat(valor)
     except (TypeError, ValueError) as erro:
         raise ErroOCPP("TypeConstraintViolation", f"Data inválida: {valor!r}") from erro
+    # no OCPP as datas são em UTC; sem fuso explícito, assumimos UTC
+    return para_hora_local(dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
 
 
 def _numero(valor) -> float:
@@ -141,8 +150,8 @@ def _agora_iso() -> str:
 # --- ações --------------------------------------------------------------------
 
 def _boot_notification(db: Session, carregador_id: str, payload: dict) -> dict:
-    _campo(payload, "chargePointVendor")
-    _campo(payload, "chargePointModel")
+    _campo(payload, "chargePointVendor", str)
+    _campo(payload, "chargePointModel", str)
     conhecido = db.get(m.Carregador, carregador_id) is not None
     return {
         "status": "Accepted" if conhecido else "Rejected",
@@ -157,15 +166,15 @@ def _heartbeat(db: Session, carregador_id: str, payload: dict) -> dict:
 
 def _authorize(db: Session, carregador_id: str, payload: dict) -> dict:
     # tag desconhecida também é aceita: a sessão abre e vai para a quarentena (regra da Sprint 01)
-    _campo(payload, "idTag")
+    _campo(payload, "idTag", str)
     return {"idTagInfo": {"status": "Accepted"}}
 
 
 def _start_transaction(db: Session, carregador_id: str, payload: dict) -> dict:
-    _campo(payload, "connectorId")
-    id_tag = _campo(payload, "idTag")
+    _campo(payload, "connectorId", int)
+    id_tag = _campo(payload, "idTag", str)
     leitura_inicial = _kwh(_campo(payload, "meterStart"))
-    inicio_em = _data(_campo(payload, "timestamp"))
+    inicio_em = _data(_campo(payload, "timestamp", str))
     try:
         # o idTag é o cartão lido pelo carregador: o OCPP é só o transporte,
         # então a sessão fica com metodo_identificacao "rfid"
@@ -191,16 +200,20 @@ def _sessao_da_transacao(db: Session, carregador_id: str, transacao) -> m.Sessao
 
 
 def _meter_values(db: Session, carregador_id: str, payload: dict) -> dict:
-    _campo(payload, "connectorId")
-    leituras = _campo(payload, "meterValue")
+    _campo(payload, "connectorId", int)
+    leituras = _campo(payload, "meterValue", list)
     sessao = _sessao_da_transacao(db, carregador_id, payload.get("transactionId"))
     if sessao is None:
         return {}  # leitura fora de uma sessão aberta não tem onde ser gravada
 
     for leitura in leituras:
-        quando = _data(_campo(leitura, "timestamp"))
+        _tipo(leitura, dict, "meterValue")
+        quando = _data(_campo(leitura, "timestamp", str))
         energia, potencia = None, 0.0
-        for amostra in _campo(leitura, "sampledValue"):
+        for amostra in _campo(leitura, "sampledValue", list):
+            _tipo(amostra, dict, "sampledValue")
+            if amostra.get("phase") is not None:
+                continue  # valores por fase (L1, L2...) são parciais; usamos só o total
             medida = amostra.get("measurand", MEDIDA_ENERGIA)
             if medida == MEDIDA_ENERGIA:
                 energia = _kwh(_campo(amostra, "value"), amostra.get("unit", "Wh"))
@@ -217,9 +230,9 @@ def _ultimo_evento(db: Session, sessao: m.SessaoRecarga) -> datetime:
 
 
 def _status_notification(db: Session, carregador_id: str, payload: dict) -> dict:
-    _campo(payload, "connectorId")
-    _campo(payload, "errorCode")
-    status = STATUS_OCPP.get(_campo(payload, "status"))
+    _campo(payload, "connectorId", int)
+    _campo(payload, "errorCode", str)
+    status = STATUS_OCPP.get(_campo(payload, "status", str))
     sessao = sessao_aberta_do_carregador(db, carregador_id)
     if status is None or sessao is None:
         return {}
@@ -234,8 +247,8 @@ def _status_notification(db: Session, carregador_id: str, payload: dict) -> dict
 def _stop_transaction(db: Session, carregador_id: str, payload: dict) -> dict:
     transacao = _campo(payload, "transactionId")
     leitura_final = _kwh(_campo(payload, "meterStop"))
-    fim_em = _data(_campo(payload, "timestamp"))
-    motivo = MOTIVOS_OCPP.get(payload.get("reason", "Local"), "limite_operacional")
+    fim_em = _data(_campo(payload, "timestamp", str))
+    motivo = MOTIVOS_OCPP.get(_tipo(payload.get("reason", "Local"), str, "reason"), "limite_operacional")
     sessao = _sessao_da_transacao(db, carregador_id, transacao)
     if sessao is None:
         # já encerrada ou inexistente (inclui transactionId 0): o carregador reenvia
