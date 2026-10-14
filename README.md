@@ -90,7 +90,7 @@ O Vite repassa as chamadas `/api/*` para `http://localhost:8000`. Se a API estiv
 
 ```bash
 cd backend
-python -m pytest -v                # 94 testes: rateio, fluxo de sessão, casos de borda, API, IA, SEMS e OCPP
+python -m pytest -v                # 96 testes: rateio, fluxo de sessão, casos de borda, API, IA, SEMS e OCPP
 
 cd ..
 pip install nbformat nbclient ipykernel matplotlib
@@ -403,7 +403,7 @@ backend/
       sems.py           adaptador GoodWe SEMS (não validado)
       ocpp16.py         tradutor OCPP 1.6J (subconjunto, sem teste em hardware)
   simulador/            gerador de 6 meses de uso
-  tests/                94 testes (pytest)
+  tests/                96 testes (pytest)
 frontend/
   src/paginas/          telas (gestor, faturas, morador, simulação, regras)
   src/componentes/      fatura explicável, gráficos, mapa de calor, decisões, campo em reais
