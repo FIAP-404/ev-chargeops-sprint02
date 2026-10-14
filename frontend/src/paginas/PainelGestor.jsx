@@ -13,6 +13,7 @@ export default function PainelGestor() {
   const previsao = useApi("/ia/previsao-capacidade");
   const alertas = useApi("/ia/alertas?status=aberto");
   const usuarios = useApi("/usuarios");
+  const statusIa = useApi("/ia/status");
 
   const recarregar = () => {
     resumo.recarregar();
@@ -25,6 +26,7 @@ export default function PainelGestor() {
   const meses = historico.dados?.map((h) => h.mes) ?? [mes];
   const moradores = (usuarios.dados ?? []).filter((u) => u.unidade);
   const avisos = (alertas.dados ?? []).filter((a) => a.tipo === "anomalia_sessao" && a.severidade === "baixa");
+  const modelo = statusIa.dados?.anomalias;
 
   return (
     <>
@@ -62,6 +64,12 @@ export default function PainelGestor() {
           <header>
             <h2 id="t-decisoes">Decisões pendentes</h2>
             <p>A IA retém a cobrança de sessões fora do padrão até você decidir.</p>
+            {modelo?.cold_start && (
+              <p className="mudo" style={{ flexBasis: "100%" }}>
+                Modelo desligado (cold start): só as regras de negócio avaliam as sessões. O Isolation Forest liga com{" "}
+                {modelo.minimo_sessoes} sessões no histórico (hoje: {modelo.sessoes_elegiveis}).
+              </p>
+            )}
           </header>
           {r ? (
             <DecisoesPendentes

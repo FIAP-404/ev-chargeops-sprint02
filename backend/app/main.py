@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import SessionLocal, criar_tabelas
+from app.ia.servico import treinar_se_necessario
 from app.routers import faturas, ia, integracoes, notificacoes, ocpp, painel, sessoes
 from app.seed import popular_cadastro
 
@@ -24,6 +25,11 @@ async def ciclo_de_vida(_app: FastAPI):
     criar_tabelas()
     with SessionLocal() as db:
         popular_cadastro(db)
+        # banco com histórico mas sem modelo salvo: treina agora em vez de esperar a próxima fatura
+        try:
+            treinar_se_necessario(db)
+        except Exception:  # a API sobe mesmo assim, só com as regras
+            logging.getLogger("evchargeops.ia").exception("treino inicial da IA falhou")
     yield
 
 

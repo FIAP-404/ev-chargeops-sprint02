@@ -9,17 +9,22 @@ from app import models as m
 from app import schemas
 from app.database import get_db
 from app.ia import servico as ia
+from app.ia.anomalias import MIN_SESSOES_TREINO
 from app.serializacao import alerta_dict
 
 router = APIRouter(prefix="/ia", tags=["IA"])
 
 
 @router.get("/status")
-def status():
+def status(db: Session = Depends(get_db)):
     det, prev = ia.detector(), ia.previsor()
     return {
         "anomalias": {
             "treinado": det.treinado,
+            # cold start: sem modelo treinado, só as regras de negócio avaliam as sessões
+            "cold_start": not det.treinado,
+            "minimo_sessoes": MIN_SESSOES_TREINO,
+            "sessoes_elegiveis": len(ia.base_sessoes(db)),
             "sessoes_treino": det.n_treino,
             "treinado_em": det.treinado_em.isoformat(timespec="minutes") if det.treinado_em else None,
             "tecnica": "Regras de negócio + Isolation Forest (scikit-learn)",

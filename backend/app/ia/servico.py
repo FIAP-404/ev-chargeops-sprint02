@@ -1,12 +1,12 @@
 """Integração do módulo de IA com o fluxo da plataforma.
 
-É aqui que a IA deixa de ser um componente isolado e passa a ter papel
-estrutural:
-
-- avaliar_sessao_encerrada(): chamada por encerrar_sessao() em TODA sessão.
+- avaliar_sessao_encerrada(): chamada por encerrar_sessao() em toda sessão.
   O resultado decide o status de cobrança: a sessão vai direto para o rateio
-  ou fica retida em "revisao_ia" até o gestor decidir. Ou seja, nenhuma
-  sessão anômala chega na fatura sem passar por uma pessoa.
+  ou fica retida em "revisao_ia" até o gestor decidir.
+
+- treinar_modelos(): retreina os dois modelos com o histórico do banco. Roda
+  ao gerar as faturas do mês, por POST /ia/treinar e na subida da API quando
+  ainda não há modelo salvo (treinar_se_necessario).
 
 - atualizar_alertas_capacidade(): usa a previsão de demanda para gerar
   alertas de capacidade no painel do gestor (ex.: sugerir segundo ponto).
@@ -25,7 +25,14 @@ from sqlalchemy.orm import Session
 
 from app import models as m
 from app.database import PASTA_DADOS
-from app.ia.anomalias import DetectorAnomalias, Motivo, aplicar_regras, br, features_da_sessao
+from app.ia.anomalias import (
+    MIN_SESSOES_TREINO,
+    DetectorAnomalias,
+    Motivo,
+    aplicar_regras,
+    br,
+    features_da_sessao,
+)
 from app.ia.previsao import PrevisorDemanda, analisar_capacidade, montar_base_demanda, projetar_kwh_restante
 
 ARQ_DETECTOR = PASTA_DADOS / "modelo_anomalias.joblib"
@@ -237,6 +244,22 @@ def treinar_modelos(db: Session, agora: datetime | None = None) -> dict:
     return {"anomalias": info_det, "demanda": info_prev, "treinado_em": agora.isoformat(timespec="seconds")}
 
 
+def treinar_se_necessario(db: Session) -> dict | None:
+    """Treino na subida da API: só quando não há modelo salvo e o histórico já basta.
+
+    Sem isso, um banco com histórico mas sem os arquivos dos modelos (cópia
+    nova, pasta de dados limpa) ficaria só com as regras até a próxima fatura.
+    """
+    if ARQ_DETECTOR.exists() and ARQ_PREVISOR.exists():
+        return None
+    if len(base_sessoes(db)) < MIN_SESSOES_TREINO:
+        return None
+    info = treinar_modelos(db)
+    if info["demanda"]["treinado"]:
+        atualizar_alertas_capacidade(db)
+    return info
+
+
 # --------------------------------------------------------------------------
 # Previsão de capacidade (painel do gestor)
 # --------------------------------------------------------------------------
@@ -254,7 +277,8 @@ def previsao_capacidade(db: Session, agora: datetime | None = None, horizonte_se
     agora = agora or datetime.now()
     prev = previsor()
     if not prev.treinado:
-        return {"disponivel": False, "motivo": "modelo de demanda ainda não treinado"}
+        return {"disponivel": False,
+                "motivo": "Modelo desligado (cold start): a previsão precisa de 8 semanas completas de histórico."}
     n_carregadores = db.scalar(select(func.count(m.Carregador.id))) or 1
     duracao_h = duracao_media_recente_h(db, agora)
     tabela = prev.prever(horizonte_semanas)
