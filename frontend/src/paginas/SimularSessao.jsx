@@ -52,18 +52,25 @@ export default function SimularSessao() {
     const c = CENARIOS[cenario];
     const potencia = c.potencia ?? CARTOES.find((x) => x[0] === cartao)[2] * 0.95;
     const horasCarga = (c.kwh / potencia) * (c.falha ?? 1);
-    // a sessão termina "agora": o início é calculado para trás
-    const fim = new Date();
-    const inicio = new Date(fim.getTime() - (horasCarga * 60 + c.ociosoMin) * 60000);
-    const fimCarga = new Date(inicio.getTime() + horasCarga * 3600000);
-    const leituraInicial = 30000 + Math.round(Math.random() * 5000);
+    const duracaoMs = (horasCarga * 60 + c.ociosoMin) * 60000;
     const hora = (d) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
     try {
+      // a sessão termina "agora": o início é calculado para trás, sem invadir a
+      // recarga anterior (a API recusa sessões sobrepostas no mesmo carregador).
+      // fim_em vem sem os segundos, por isso o minuto a mais.
+      const [ultima] = await api("/sessoes?limite=1");
+      const livreEm = ultima?.fim_em ? new Date(ultima.fim_em).getTime() + 60000 : 0;
+      const inicio = new Date(Math.max(Date.now() - duracaoMs, livreEm));
+      const fimCarga = new Date(inicio.getTime() + horasCarga * 3600000);
+      const fim = new Date(fimCarga.getTime() + c.ociosoMin * 60000);
+
+      // sem leitura_inicial_kwh, a API continua o medidor de onde a última sessão parou
       const sessao = await api("/sessoes/iniciar", {
         metodo: "POST",
-        corpo: { codigo_rfid: cartao, inicio_em: isoLocal(inicio), leitura_inicial_kwh: leituraInicial },
+        corpo: { codigo_rfid: cartao, inicio_em: isoLocal(inicio) },
       });
+      const leituraInicial = sessao.leitura_inicial_kwh;
       log(hora(inicio), `RFID lido. Sessão #${sessao.id} aberta ${sessao.unidade ? `para a unidade ${sessao.unidade}` : "sem morador identificado"}. Medidor em ${num(leituraInicial, 0)} kWh.`);
 
       let t = new Date(inicio);

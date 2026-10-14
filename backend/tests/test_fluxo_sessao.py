@@ -95,7 +95,8 @@ def test_ociosidade_longa_avisa_mas_nao_retem(db):
 
 def test_sessao_retida_nao_entra_na_fatura_ate_revisao(db):
     normal = recarga(db, "RFID-A1204-01", 18.6, inicio=datetime(2026, 8, 3, 19))
-    suspeita = recarga(db, "RFID-A1204-02", 40, inicio=datetime(2026, 8, 10, 19), horas_carga=6)
+    suspeita = recarga(db, "RFID-A1204-02", 40, inicio=datetime(2026, 8, 10, 19), horas_carga=6,
+                       leitura_inicial=1018.6)
     faturas = {f.unidade.rotulo: f for f in gerar_faturas(db, "2026-08")}
     f = faturas["A-1204"]
     assert f.kwh_total == pytest.approx(18.6)
@@ -129,7 +130,7 @@ def test_fatura_do_exemplo_sprint01_via_fluxo_completo(db):
     params.ociosidade_ativa = False
     db.commit()
     recarga(db, "RFID-A1204-01", 18.6, inicio=datetime(2026, 8, 3, 19, 10))
-    recarga(db, "RFID-A1204-02", 23.4, inicio=datetime(2026, 8, 12, 20, 0), horas_carga=4)
+    recarga(db, "RFID-A1204-02", 23.4, inicio=datetime(2026, 8, 12, 20, 0), horas_carga=4, leitura_inicial=1018.6)
     f = {x.unidade.rotulo: x for x in gerar_faturas(db, "2026-08")}
     assert f["A-1204"].valor_total == pytest.approx(61.90)
     assert f["B-202"].valor_total == 0  # unidade sem uso

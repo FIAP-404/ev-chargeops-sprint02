@@ -19,7 +19,7 @@ import hashlib
 import json
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models as m
@@ -81,8 +81,9 @@ def iniciar_sessao(
     carregador_id: str,
     codigo_rfid: str,
     inicio_em: datetime | None = None,
-    leitura_inicial_kwh: float = 0.0,
+    leitura_inicial_kwh: float | None = None,
 ) -> m.SessaoRecarga:
+    """leitura_inicial_kwh vazia = última leitura do medidor deste carregador."""
     inicio_em = para_hora_local(inicio_em) or datetime.now()
     carregador = db.get(m.Carregador, carregador_id)
     if carregador is None:
@@ -98,6 +99,23 @@ def iniciar_sessao(
     if sessao_aberta_do_carregador(db, carregador_id) is not None:
         registrar_tentativa_ocupado(db, carregador_id, usuario.id if usuario else None, inicio_em)
         raise ErroSessao("Carregador ocupado: já existe uma sessão em andamento", 409)
+
+    # a sessão começa depois da anterior e o medidor continua de onde ela parou
+    ultima = db.scalar(
+        select(m.SessaoRecarga)
+        .where(m.SessaoRecarga.carregador_id == carregador_id)
+        .order_by(m.SessaoRecarga.inicio_em.desc())
+        .limit(1)
+    )
+    if ultima is not None and ultima.fim_em > inicio_em:
+        raise ErroSessao("inicio_em se sobrepõe a uma sessão já encerrada neste carregador", 422)
+    leitura_anterior = ultima.leitura_final_kwh if ultima is not None else 0.0
+    if leitura_inicial_kwh is None:
+        leitura_inicial_kwh = leitura_anterior
+    elif leitura_inicial_kwh < leitura_anterior:
+        raise ErroSessao(
+            f"leitura_inicial_kwh menor que a última leitura do medidor ({br(leitura_anterior, 3)} kWh)", 422
+        )
 
     sessao = m.SessaoRecarga(
         carregador_id=carregador_id,
@@ -141,6 +159,8 @@ def registrar_telemetria(
     """
     timestamp = para_hora_local(timestamp)
     sessao = _sessao_aberta(db, sessao_id)
+    if timestamp < sessao.inicio_em:
+        raise ErroSessao("timestamp da telemetria anterior ao início da sessão", 422)
 
     if energia_acumulada_kwh < (sessao.leitura_final_kwh or 0):
         # medidor não pode andar para trás: registra o problema e ignora a leitura
@@ -183,6 +203,13 @@ def encerrar_sessao(
     fim_em = para_hora_local(fim_em) or datetime.now()
     if fim_em < sessao.inicio_em:
         raise ErroSessao("fim_em anterior ao início da sessão")
+    ultimo_evento = db.scalar(select(func.max(m.EventoSessao.timestamp)).where(m.EventoSessao.sessao_id == sessao.id))
+    if ultimo_evento is not None and fim_em < ultimo_evento:
+        raise ErroSessao("fim_em anterior à última telemetria da sessão", 422)
+    if leitura_final_kwh is not None and leitura_final_kwh < sessao.leitura_final_kwh:
+        raise ErroSessao(
+            f"leitura_final_kwh menor que a última telemetria ({br(sessao.leitura_final_kwh, 3)} kWh)", 422
+        )
 
     # Falha de comunicação: sem leitura final, usa o último dado válido
     # recebido na telemetria (Sprint 01, seção 5.4).

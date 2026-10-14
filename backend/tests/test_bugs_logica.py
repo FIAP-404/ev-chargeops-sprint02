@@ -9,9 +9,9 @@ from app.database import get_db
 from app.faturamento import calcular_unidade, gerar_faturas
 from app.main import app
 from app.seed import CARREGADOR_ID
-from app.sessoes import encerrar_sessao, iniciar_sessao, registrar_telemetria, revisar_sessao
+from app.sessoes import ErroSessao, encerrar_sessao, iniciar_sessao, registrar_telemetria, revisar_sessao
 
-from .test_fluxo_sessao import recarga
+from .test_fluxo_sessao import T0, recarga
 
 
 @pytest.fixture
@@ -78,3 +78,52 @@ def test_encerrar_com_fuso_z_e_menos_tres(cliente):
     })
     assert r.status_code == 200
     assert r.json()["duracao_min"] == 150
+
+
+def _status_do_erro(funcao, *args):
+    with pytest.raises(ErroSessao) as erro:
+        funcao(*args)
+    return erro.value.status_http
+
+
+def test_telemetria_anterior_ao_inicio_422(db):
+    s = iniciar_sessao(db, CARREGADOR_ID, "RFID-A1204-01", T0, 1000)
+    assert _status_do_erro(registrar_telemetria, db, s.id, T0 - timedelta(minutes=5), 6.2, 1001) == 422
+    assert s.carga_completa_em is None
+
+
+def test_fim_antes_da_ultima_telemetria_422(db):
+    s = iniciar_sessao(db, CARREGADOR_ID, "RFID-A1204-01", T0, 1000)
+    registrar_telemetria(db, s.id, T0 + timedelta(hours=2), 0.0, 1012.4, "carga_completa")
+    fim = T0 + timedelta(hours=1)
+    assert _status_do_erro(encerrar_sessao, db, s.id, "usuario_desconectou", fim, 1012.4) == 422
+    assert s.status_final == m.STATUS_EM_ANDAMENTO
+
+
+def test_inicio_sobreposto_a_sessao_encerrada_422(db):
+    recarga(db, "RFID-A1204-01", 18.6)  # 19:10 às 22:10
+    inicio = T0 + timedelta(hours=2)
+    assert _status_do_erro(iniciar_sessao, db, CARREGADOR_ID, "RFID-A0302-01", inicio, 1018.6) == 422
+
+
+def test_leitura_inicial_menor_que_anterior_422(db):
+    recarga(db, "RFID-A1204-01", 18.6)  # medidor termina em 1018,6
+    inicio = T0 + timedelta(hours=4)
+    assert _status_do_erro(iniciar_sessao, db, CARREGADOR_ID, "RFID-A0302-01", inicio, 1000) == 422
+
+
+def test_leitura_inicial_omitida_usa_ultima_leitura(cliente, db):
+    primeira = iniciar_sessao(db, CARREGADOR_ID, "RFID-A0302-01", T0 - timedelta(days=1))
+    assert primeira.leitura_inicial_kwh == 0  # carregador sem histórico
+    encerrar_sessao(db, primeira.id, "usuario_desconectou", T0 - timedelta(hours=20), 18.6)
+
+    r = cliente.post("/sessoes/iniciar", json={"codigo_rfid": "RFID-A1204-01", "inicio_em": "2026-08-03T19:10:00"})
+    assert r.status_code == 201
+    assert r.json()["leitura_inicial_kwh"] == pytest.approx(18.6)
+
+
+def test_leitura_final_menor_que_telemetria_422(db):
+    s = iniciar_sessao(db, CARREGADOR_ID, "RFID-A1204-01", T0, 1000)
+    registrar_telemetria(db, s.id, T0 + timedelta(hours=1), 6.2, 1006.2)
+    fim = T0 + timedelta(hours=2)
+    assert _status_do_erro(encerrar_sessao, db, s.id, "usuario_desconectou", fim, 1003.0) == 422

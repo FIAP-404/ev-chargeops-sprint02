@@ -15,6 +15,7 @@ def sessao_dict(s: m.SessaoRecarga, com_eventos: bool = False) -> dict:
         "carregador_id": s.carregador_id,
         "inicio_em": s.inicio_em.isoformat(timespec="minutes"),
         "fim_em": s.fim_em.isoformat(timespec="minutes") if s.fim_em else None,
+        "leitura_inicial_kwh": s.leitura_inicial_kwh,
         "kwh_entregue": s.kwh_entregue,
         "duracao_min": s.duracao_min,
         "minutos_ociosos": s.minutos_ociosos,
