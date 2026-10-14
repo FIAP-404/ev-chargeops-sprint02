@@ -83,6 +83,13 @@ def _matriz(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(X)
 
 
+def _erro_semanal_pct(previsto: np.ndarray, real: np.ndarray) -> float | None:
+    """Erro médio em % do total de cada semana; None se alguma semana de teste não teve chegadas."""
+    if (real == 0).any():
+        return None
+    return round(float(np.mean(np.abs(previsto - real) / real) * 100), 1)
+
+
 class PrevisorDemanda:
     def __init__(self):
         self.modelo: PoissonRegressor | None = None
@@ -106,15 +113,12 @@ class PrevisorDemanda:
         # backtest: treina sem as últimas 4 semanas e compara com o que aconteceu
         corte = n_semanas - SEMANAS_BACKTEST
         treino, teste = df[df["semana"] < corte], df[df["semana"] >= corte]
-        semanal_real = teste.groupby("semana")["chegadas"].sum().to_numpy()
-        if (semanal_real == 0).any():
-            # base rala demais (ex.: poucas sessões em 8 semanas): o erro semanal em % nem existe
-            return {"treinado": False, "motivo": "semana sem nenhuma chegada no período de teste"}
         modelo_bt = self._novo_modelo().fit(_matriz(treino), treino["chegadas"])
         prev = modelo_bt.predict(_matriz(teste))
         # baseline ingênuo: média histórica do mesmo dia/hora (sem tendência)
         base = treino.groupby(["dia", "hora"])["chegadas"].mean()
         prev_base = teste.set_index(["dia", "hora"]).index.map(base).to_numpy()
+        semanal_real = teste.groupby("semana")["chegadas"].sum().to_numpy()
         semanal_prev = pd.Series(prev, index=teste.index).groupby(teste["semana"]).sum().to_numpy()
         semanal_base = pd.Series(prev_base, index=teste.index).groupby(teste["semana"]).sum().to_numpy()
         self.metricas = {
@@ -122,8 +126,8 @@ class PrevisorDemanda:
             "semanas_backtest": SEMANAS_BACKTEST,
             "mae_por_hora_modelo": round(float(np.mean(np.abs(prev - teste["chegadas"]))), 4),
             "mae_por_hora_baseline": round(float(np.mean(np.abs(prev_base - teste["chegadas"]))), 4),
-            "erro_semanal_medio_pct_modelo": round(float(np.mean(np.abs(semanal_prev - semanal_real) / semanal_real) * 100), 1),
-            "erro_semanal_medio_pct_baseline": round(float(np.mean(np.abs(semanal_base - semanal_real) / semanal_real) * 100), 1),
+            "erro_semanal_medio_pct_modelo": _erro_semanal_pct(semanal_prev, semanal_real),
+            "erro_semanal_medio_pct_baseline": _erro_semanal_pct(semanal_base, semanal_real),
         }
 
         # modelo final com todo o histórico

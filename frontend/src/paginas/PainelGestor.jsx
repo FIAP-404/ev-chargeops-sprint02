@@ -120,10 +120,14 @@ export default function PainelGestor() {
           <header>
             <h2 id="t-calor">Quando a procura vai acontecer na próxima semana</h2>
             <p>
-              Regressão de Poisson treinada com {previsao.dados.metricas_modelo.semanas_historico} semanas. No teste com
-              as últimas 4 semanas, errou {num(previsao.dados.metricas_modelo.erro_semanal_medio_pct_modelo, 0)}% no
-              total semanal, contra {num(previsao.dados.metricas_modelo.erro_semanal_medio_pct_baseline, 0)}% da média
-              histórica simples.
+              Regressão de Poisson treinada com {previsao.dados.metricas_modelo.semanas_historico} semanas.
+              {previsao.dados.metricas_modelo.erro_semanal_medio_pct_modelo != null ? (
+                <>
+                  {" "}No teste com as últimas 4 semanas, errou{" "}
+                  {num(previsao.dados.metricas_modelo.erro_semanal_medio_pct_modelo, 0)}% no total semanal, contra{" "}
+                  {num(previsao.dados.metricas_modelo.erro_semanal_medio_pct_baseline, 0)}% da média histórica simples.
+                </>
+              ) : " Ainda sem erro semanal medido: alguma das últimas 4 semanas não teve chegadas."}
             </p>
           </header>
           <MapaDeCalor grade={previsao.dados.grade_proxima_semana} />
