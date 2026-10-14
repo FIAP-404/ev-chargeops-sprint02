@@ -16,10 +16,11 @@ router = APIRouter(tags=["Avisos ao morador"])
 def listar(usuario_id: int, nao_lidas: bool = False, limite: int = 20, db: Session = Depends(get_db)):
     if db.get(m.Usuario, usuario_id) is None:
         raise HTTPException(404, "Usuário não encontrado")
+    # não lidos primeiro, depois do mais recente para o mais antigo
     q = (
         select(m.Notificacao)
         .where(m.Notificacao.usuario_id == usuario_id)
-        .order_by(m.Notificacao.criado_em.desc(), m.Notificacao.id.desc())
+        .order_by(m.Notificacao.lida, m.Notificacao.criado_em.desc(), m.Notificacao.id.desc())
         .limit(limite)
     )
     if nao_lidas:
