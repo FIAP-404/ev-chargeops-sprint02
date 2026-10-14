@@ -184,19 +184,23 @@ export default function SimularSessao() {
                   <code>{QR_CARREGADOR}</code>
                   <span>Adesivo do carregador, Estacionamento L1</span>
                 </div>
-                <label className="campo">
-                  Morador (app)
-                  <select
-                    value={morador?.id ?? ""}
-                    onChange={(e) => { setUsuarioId(Number(e.target.value)); setVeiculoId(null); }}
-                  >
-                    {moradores.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.unidade}, {u.nome} ({u.veiculos_detalhe.map((v) => v.modelo).join(" e ")})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {usuarios.erro ? (
+                  <p className="mudo">Não foi possível carregar os moradores: {usuarios.erro.message}.</p>
+                ) : (
+                  <label className="campo">
+                    Morador (app)
+                    <select
+                      value={morador?.id ?? ""}
+                      onChange={(e) => { setUsuarioId(Number(e.target.value)); setVeiculoId(null); }}
+                    >
+                      {moradores.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.unidade}, {u.nome} ({u.veiculos_detalhe.map((v) => v.modelo).join(" e ")})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 {morador?.veiculos_detalhe.length > 1 && (
                   <label className="campo">
                     Veículo
