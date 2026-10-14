@@ -13,6 +13,7 @@ def sessao_dict(s: m.SessaoRecarga, com_eventos: bool = False) -> dict:
         "unidade": s.unidade.rotulo if s.unidade else None,
         "veiculo": f"{s.veiculo.modelo} ({s.veiculo.placa})" if s.veiculo else None,
         "carregador_id": s.carregador_id,
+        "metodo_identificacao": s.metodo_identificacao,
         "inicio_em": s.inicio_em.isoformat(timespec="minutes"),
         "fim_em": s.fim_em.isoformat(timespec="minutes") if s.fim_em else None,
         "leitura_inicial_kwh": s.leitura_inicial_kwh,

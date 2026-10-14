@@ -1,4 +1,5 @@
 """Testes do fluxo completo: RFID -> telemetria -> encerramento -> IA -> fatura."""
+import json
 from datetime import datetime, timedelta
 
 import pytest
@@ -7,8 +8,15 @@ from sqlalchemy import select
 from app import models as m
 from app import notificacoes
 from app.faturamento import gerar_faturas, valor_da_sessao
-from app.seed import CARREGADOR_ID
-from app.sessoes import ErroSessao, encerrar_sessao, iniciar_sessao, registrar_telemetria, revisar_sessao
+from app.seed import CARREGADOR_ID, QR_TOKEN_CARREGADOR
+from app.sessoes import (
+    ErroSessao,
+    encerrar_sessao,
+    iniciar_sessao,
+    iniciar_sessao_app,
+    registrar_telemetria,
+    revisar_sessao,
+)
 
 T0 = datetime(2026, 8, 3, 19, 10)
 
@@ -27,6 +35,18 @@ def recarga(db, rfid, kwh, inicio=T0, horas_carga=3.0, ociosas_h=0.0, potencia=6
     return encerrar_sessao(db, s.id, motivo, fim_carga + timedelta(hours=ociosas_h))
 
 
+def usuario(db, email):
+    return db.scalar(select(m.Usuario).where(m.Usuario.email == email))
+
+
+def recarga_app(db, email, veiculo_id=None, kwh=18.6, inicio=T0, leitura_inicial=1000.0):
+    """Mesma recarga, mas iniciada pelo app lendo o QR Code do carregador."""
+    s = iniciar_sessao_app(db, CARREGADOR_ID, QR_TOKEN_CARREGADOR, usuario(db, email).id, veiculo_id, inicio,
+                           leitura_inicial)
+    registrar_telemetria(db, s.id, inicio + timedelta(hours=3), 6.2, leitura_inicial + kwh, "carregando")
+    return encerrar_sessao(db, s.id, "usuario_desconectou", inicio + timedelta(hours=3))
+
+
 def avisos(db, sessao_id, tipo=None):
     q = select(m.Notificacao).where(m.Notificacao.sessao_id == sessao_id)
     if tipo:
@@ -39,8 +59,65 @@ def test_sessao_identificada_normal_vai_para_rateio(db):
     assert s.kwh_entregue == pytest.approx(18.6)
     assert s.usuario_id is not None and s.unidade_id is not None
     assert s.status_cobranca == m.COBRANCA_LIBERADA
+    assert s.metodo_identificacao == "rfid"
     tipos = [e.tipo_evento for e in s.eventos]
     assert tipos[0] == "inicio" and tipos[-1] == "fim"
+
+
+def test_sessao_por_qr_entra_no_rateio(db):
+    rafael = usuario(db, "rafael.a302@exemplo.com")
+    s = recarga_app(db, "rafael.a302@exemplo.com")  # sem veiculo_id: Rafael só tem o BYD Seal
+    assert s.veiculo_id == rafael.veiculos[0].id and s.unidade_id == rafael.unidade_id
+    assert s.metodo_identificacao == "app_qr" and s.rfid_hash is None
+    assert s.status_cobranca == m.COBRANCA_LIBERADA
+    assert json.loads(s.eventos[0].payload_json)["metodo"] == "app_qr"
+    assert len(avisos(db, s.id, "resumo_sessao")) == 1  # o resumo chega igual ao do RFID
+    f = {x.unidade.rotulo: x for x in gerar_faturas(db, "2026-08")}["A-302"]
+    assert f.qtd_sessoes == 1
+
+
+def test_qr_token_invalido_recusa_com_403(db):
+    rafael = usuario(db, "rafael.a302@exemplo.com")
+    with pytest.raises(ErroSessao) as erro:
+        iniciar_sessao_app(db, CARREGADOR_ID, "QR-COPIADO-ERRADO", rafael.id, None, T0, 1000)
+    assert erro.value.status_http == 403
+    assert db.scalar(select(m.SessaoRecarga)) is None
+    assert db.scalar(select(m.TentativaOcupado)) is None
+
+
+def test_qr_usuario_inativo_recusa_com_403(db):
+    rafael = usuario(db, "rafael.a302@exemplo.com")
+    rafael.status = "inativo"
+    db.commit()
+    with pytest.raises(ErroSessao, match="inativo") as erro:
+        iniciar_sessao_app(db, CARREGADOR_ID, QR_TOKEN_CARREGADOR, rafael.id, None, T0, 1000)
+    assert erro.value.status_http == 403
+
+
+def test_qr_veiculo_de_outro_usuario_recusa_com_422(db):
+    rafael = usuario(db, "rafael.a302@exemplo.com")
+    carro_da_marina = usuario(db, "marina.a1204@exemplo.com").veiculos[0]
+    with pytest.raises(ErroSessao, match="não pertence") as erro:
+        iniciar_sessao_app(db, CARREGADOR_ID, QR_TOKEN_CARREGADOR, rafael.id, carro_da_marina.id, T0, 1000)
+    assert erro.value.status_http == 422
+
+
+def test_qr_usuario_com_dois_veiculos_precisa_escolher(db):
+    marina = usuario(db, "marina.a1204@exemplo.com")
+    with pytest.raises(ErroSessao, match="mais de um veículo") as erro:
+        iniciar_sessao_app(db, CARREGADOR_ID, QR_TOKEN_CARREGADOR, marina.id, None, T0, 1000)
+    assert erro.value.status_http == 422
+    s = recarga_app(db, "marina.a1204@exemplo.com", veiculo_id=marina.veiculos[1].id)
+    assert s.veiculo_id == marina.veiculos[1].id
+
+
+def test_qr_com_carregador_ocupado_recusa_e_registra_tentativa(db):
+    iniciar_sessao(db, CARREGADOR_ID, "RFID-A0302-01", T0, 500)
+    juliana = usuario(db, "juliana.a507@exemplo.com")
+    with pytest.raises(ErroSessao) as erro:
+        iniciar_sessao_app(db, CARREGADOR_ID, QR_TOKEN_CARREGADOR, juliana.id, None, T0 + timedelta(minutes=10))
+    assert erro.value.status_http == 409
+    assert db.scalar(select(m.TentativaOcupado)).usuario_id == juliana.id
 
 
 def test_rfid_desconhecido_vai_para_quarentena_e_gera_alerta(db):

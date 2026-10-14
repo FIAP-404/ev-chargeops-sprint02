@@ -36,6 +36,10 @@ COBRANCA_REVISAO_IA = "revisao_ia"  # IA marcou como anômala, gestor precisa de
 COBRANCA_FATURADA = "faturada"  # já entrou em uma fatura fechada
 COBRANCA_DESCARTADA = "descartada"  # gestor decidiu não cobrar
 
+# metodo_identificacao: como o morador se identificou no carregador
+METODO_RFID = "rfid"  # cartão no leitor do carregador
+METODO_APP_QR = "app_qr"  # app do morador lendo o QR Code colado no carregador
+
 
 class Unidade(Base):
     __tablename__ = "unidades"
@@ -90,6 +94,8 @@ class Carregador(Base):
     localizacao: Mapped[str] = mapped_column(String(120))
     potencia_max_kw: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(20), default="disponivel")
+    # conteúdo do QR Code colado no carregador; o app envia junto com o usuário logado
+    qr_token: Mapped[str | None] = mapped_column(String(40), unique=True, nullable=True)
 
 
 class CredencialRFID(Base):
@@ -111,7 +117,8 @@ class SessaoRecarga(Base):
     unidade_id: Mapped[int | None] = mapped_column(ForeignKey("unidades.id"), nullable=True)
     veiculo_id: Mapped[int | None] = mapped_column(ForeignKey("veiculos.id"), nullable=True)
     carregador_id: Mapped[str] = mapped_column(ForeignKey("carregadores.id"))
-    rfid_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    rfid_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)  # vazio quando foi pelo app
+    metodo_identificacao: Mapped[str] = mapped_column(String(10), default=METODO_RFID)
 
     inicio_em: Mapped[datetime] = mapped_column(DateTime, index=True)
     fim_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

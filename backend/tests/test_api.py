@@ -4,6 +4,7 @@ import io
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app import models as m
 from app.database import get_db
@@ -56,6 +57,17 @@ def test_fluxo_completo_pela_api(cliente):
 def test_validacao_de_entrada(cliente):
     r = cliente.post("/sessoes/iniciar", json={"codigo_rfid": "X", "leitura_inicial_kwh": -5})
     assert r.status_code == 422
+
+
+def test_iniciar_sessao_pelo_app(cliente, db):
+    rafael = db.scalar(select(m.Usuario).where(m.Usuario.email == "rafael.a302@exemplo.com"))
+    corpo = {"qr_token": "QR-HCA01-7F3A", "usuario_id": rafael.id, "inicio_em": "2026-08-03T19:10:00",
+             "leitura_inicial_kwh": 1000}
+    r = cliente.post("/sessoes/iniciar-app", json={**corpo, "qr_token": "QR-ERRADO"})
+    assert r.status_code == 403
+    r = cliente.post("/sessoes/iniciar-app", json=corpo)
+    assert r.status_code == 201
+    assert r.json()["metodo_identificacao"] == "app_qr" and r.json()["unidade"] == "A-302"
 
 
 def test_painel_do_usuario_e_dashboard(cliente):

@@ -1,7 +1,7 @@
 """Ciclo de vida de uma sessão de recarga.
 
 Segue o fluxo da seção 5.2 da Sprint 01:
-  1. usuário se identifica por RFID          -> iniciar_sessao()
+  1. usuário se identifica por RFID ou app/QR -> iniciar_sessao() / iniciar_sessao_app()
   2. plataforma valida o usuário
   3. sessão aberta com leitura inicial
   4. carregador envia telemetria             -> registrar_telemetria()
@@ -17,6 +17,7 @@ Tanto a API quanto o simulador chamam estas funções, então o dado simulado
 percorre exatamente o mesmo caminho que um dado real percorreria.
 """
 import hashlib
+import hmac
 import json
 from datetime import datetime
 
@@ -85,8 +86,7 @@ def iniciar_sessao(
     inicio_em: datetime | None = None,
     leitura_inicial_kwh: float | None = None,
 ) -> m.SessaoRecarga:
-    """leitura_inicial_kwh vazia = última leitura do medidor deste carregador."""
-    inicio_em = para_hora_local(inicio_em) or datetime.now()
+    """Início pelo cartão RFID. leitura_inicial_kwh vazia = última leitura do medidor deste carregador."""
     carregador = db.get(m.Carregador, carregador_id)
     if carregador is None:
         raise ErroSessao(f"Carregador '{carregador_id}' não encontrado", 404)
@@ -97,15 +97,93 @@ def iniciar_sessao(
     if usuario is not None and usuario.status != "ativo":
         usuario = None
 
+    # cartão desconhecido ou inativo ainda abre a sessão, que depois vai para a quarentena
+    return _abrir_sessao(
+        db,
+        carregador,
+        usuario=usuario,
+        veiculo_id=credencial.veiculo_id if (credencial and usuario) else None,
+        metodo=m.METODO_RFID,
+        rfid_hash=rfid,
+        inicio_em=inicio_em,
+        leitura_inicial_kwh=leitura_inicial_kwh,
+    )
+
+
+def iniciar_sessao_app(
+    db: Session,
+    carregador_id: str,
+    qr_token: str,
+    usuario_id: int,
+    veiculo_id: int | None = None,
+    inicio_em: datetime | None = None,
+    leitura_inicial_kwh: float | None = None,
+) -> m.SessaoRecarga:
+    """Início pelo app: o morador logado lê o QR Code colado no carregador.
+
+    Diferente do RFID, o app nunca abre sessão anônima: QR inválido, usuário
+    inativo ou sem unidade são recusados aqui e não vão para a quarentena.
+    """
+    carregador = db.get(m.Carregador, carregador_id)
+    if carregador is None:
+        raise ErroSessao(f"Carregador '{carregador_id}' não encontrado", 404)
+    if carregador.qr_token is None or not hmac.compare_digest(carregador.qr_token.encode(), qr_token.encode()):
+        raise ErroSessao("QR Code inválido para este carregador", 403)
+
+    usuario = db.get(m.Usuario, usuario_id)
+    if usuario is None:
+        raise ErroSessao("Usuário não encontrado", 404)
+    if usuario.status != "ativo":
+        raise ErroSessao("Usuário inativo não pode iniciar recarga", 403)
+    if usuario.unidade_id is None:
+        raise ErroSessao("Usuário sem unidade não pode iniciar recarga pelo app", 403)
+
+    # no cartão o veículo vem da credencial; no app ele é escolhido ou deduzido
+    if veiculo_id is not None:
+        if veiculo_id not in {v.id for v in usuario.veiculos}:
+            raise ErroSessao("Veículo não pertence ao usuário", 422)
+    elif not usuario.veiculos:
+        raise ErroSessao("Usuário sem veículo cadastrado", 422)
+    elif len(usuario.veiculos) > 1:
+        raise ErroSessao("Informe veiculo_id: o usuário tem mais de um veículo", 422)
+    else:
+        veiculo_id = usuario.veiculos[0].id
+
+    return _abrir_sessao(
+        db,
+        carregador,
+        usuario=usuario,
+        veiculo_id=veiculo_id,
+        metodo=m.METODO_APP_QR,
+        rfid_hash=None,
+        inicio_em=inicio_em,
+        leitura_inicial_kwh=leitura_inicial_kwh,
+    )
+
+
+def _abrir_sessao(
+    db: Session,
+    carregador: m.Carregador,
+    *,
+    usuario: m.Usuario | None,
+    veiculo_id: int | None,
+    metodo: str,
+    rfid_hash: str | None,
+    inicio_em: datetime | None,
+    leitura_inicial_kwh: float | None,
+) -> m.SessaoRecarga:
+    """Regras comuns aos dois jeitos de iniciar (RFID e app/QR)."""
+    inicio_em = para_hora_local(inicio_em) or datetime.now()
+
     # um carregador só atende uma sessão por vez; a tentativa vira dado de demanda
-    if sessao_aberta_do_carregador(db, carregador_id) is not None:
-        registrar_tentativa_ocupado(db, carregador_id, usuario.id if usuario else None, inicio_em)
+    if sessao_aberta_do_carregador(db, carregador.id) is not None:
+        registrar_tentativa_ocupado(db, carregador.id, usuario.id if usuario else None, inicio_em)
         raise ErroSessao("Carregador ocupado: já existe uma sessão em andamento", 409)
 
     # a sessão começa depois da anterior e o medidor continua de onde ela parou
     ultima = db.scalar(
         select(m.SessaoRecarga)
-        .where(m.SessaoRecarga.carregador_id == carregador_id)
+        .where(m.SessaoRecarga.carregador_id == carregador.id)
         .order_by(m.SessaoRecarga.inicio_em.desc())
         .limit(1)
     )
@@ -120,11 +198,12 @@ def iniciar_sessao(
         )
 
     sessao = m.SessaoRecarga(
-        carregador_id=carregador_id,
-        rfid_hash=rfid,
+        carregador_id=carregador.id,
+        rfid_hash=rfid_hash,
+        metodo_identificacao=metodo,
         usuario_id=usuario.id if usuario else None,
         unidade_id=usuario.unidade_id if usuario else None,
-        veiculo_id=credencial.veiculo_id if (credencial and usuario) else None,
+        veiculo_id=veiculo_id,
         inicio_em=inicio_em,
         leitura_inicial_kwh=leitura_inicial_kwh,
         leitura_final_kwh=leitura_inicial_kwh,
@@ -138,7 +217,7 @@ def iniciar_sessao(
         sessao,
         inicio_em,
         "inicio",
-        {"identificado": usuario is not None, "leitura_inicial_kwh": leitura_inicial_kwh},
+        {"identificado": usuario is not None, "metodo": metodo, "leitura_inicial_kwh": leitura_inicial_kwh},
     )
     carregador.status = "em_uso"
     db.commit()

@@ -13,6 +13,17 @@ class IniciarSessao(BaseModel):
     )
 
 
+class IniciarSessaoApp(BaseModel):
+    carregador_id: str = "goodwe_hca_g2_l1"
+    qr_token: str = Field(..., examples=["QR-HCA01-7F3A"])
+    usuario_id: int
+    veiculo_id: int | None = Field(None, description="vazio = único veículo do usuário")
+    inicio_em: datetime | None = None
+    leitura_inicial_kwh: float | None = Field(
+        None, ge=0, description="leitura do medidor no início; vazio = última leitura do carregador"
+    )
+
+
 class Telemetria(BaseModel):
     timestamp: datetime
     potencia_kw: float = Field(..., ge=0)

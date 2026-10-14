@@ -115,6 +115,11 @@ def usuarios(db: Session = Depends(get_db)):
             "unidade_id": u.unidade_id,
             "unidade": u.unidade.rotulo if u.unidade else None,
             "veiculos": [f"{v.modelo} ({v.placa})" for v in u.veiculos],
+            # usado pelo app para escolher o veículo ao ler o QR Code
+            "veiculos_detalhe": [
+                {"id": v.id, "modelo": v.modelo, "placa": v.placa, "potencia_ac_max_kw": v.potencia_ac_max_kw}
+                for v in u.veiculos
+            ],
         }
         for u in lista
     ]

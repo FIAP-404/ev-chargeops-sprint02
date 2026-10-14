@@ -11,6 +11,8 @@ from app import models as m
 from app.sessoes import hash_rfid
 
 CARREGADOR_ID = "goodwe_hca_g2_l1"
+# texto do QR Code colado no carregador (lido pelo app do morador)
+QR_TOKEN_CARREGADOR = "QR-HCA01-7F3A"
 
 # potencia_ac_kw = limite do carregador de bordo do veículo (o HCA G2 entrega até 7,4 kW em monofásico)
 CADASTRO = [
@@ -57,6 +59,7 @@ def popular_cadastro(db: Session) -> None:
             localizacao="Estacionamento L1",
             potencia_max_kw=7.4,
             status="disponivel",
+            qr_token=QR_TOKEN_CARREGADOR,
         )
     )
     db.add(m.ParametrosRateio(id=1))

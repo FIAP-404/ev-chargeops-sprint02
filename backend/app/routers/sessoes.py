@@ -28,6 +28,16 @@ def iniciar(body: schemas.IniciarSessao, db: Session = Depends(get_db)):
     return sessao_dict(s)
 
 
+@router.post("/iniciar-app", status_code=201)
+def iniciar_app(body: schemas.IniciarSessaoApp, db: Session = Depends(get_db)):
+    s = _executar(
+        sessoes.iniciar_sessao_app,
+        db, body.carregador_id, body.qr_token, body.usuario_id, body.veiculo_id, body.inicio_em,
+        body.leitura_inicial_kwh,
+    )
+    return sessao_dict(s)
+
+
 @router.post("/{sessao_id}/telemetria")
 def telemetria(sessao_id: int, body: schemas.Telemetria, db: Session = Depends(get_db)):
     s = _executar(
