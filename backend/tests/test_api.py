@@ -189,3 +189,4 @@ def test_avisos_do_morador_listar_e_marcar_como_lida(cliente):
     assert nao_lidas.json() == []
     assert cliente.post("/notificacoes/999999/lida").status_code == 404
     assert cliente.get("/usuarios/999999/notificacoes").status_code == 404
+    assert cliente.get(f"/usuarios/{sessao['usuario_id']}/notificacoes", params={"limite": 0}).status_code == 422

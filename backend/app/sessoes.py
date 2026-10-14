@@ -376,11 +376,13 @@ def revisar_sessao(
     usuario_id: int | None = None,
     ajuste_valor: float = 0.0,
     observacao: str = "",
+    agora: datetime | None = None,
 ) -> m.SessaoRecarga:
     """Decisão do gestor sobre uma sessão retida (quarentena ou revisão da IA).
 
     decisao = "liberar"   -> entra no rateio (opcionalmente com crédito/ajuste)
     decisao = "descartar" -> não será cobrada
+    agora vazio = horário atual (o simulador passa o horário simulado)
     """
     sessao = db.get(m.SessaoRecarga, sessao_id)
     if sessao is None:
@@ -392,6 +394,8 @@ def revisar_sessao(
     if ajuste_valor < 0:
         raise ErroSessao("ajuste_valor é um crédito e deve ser >= 0")
 
+    agora = agora or datetime.now()
+    da_quarentena = sessao.status_cobranca == m.COBRANCA_QUARENTENA
     if decisao == "liberar":
         teto = valor_da_sessao(db, sessao)
         if ajuste_valor > teto:
@@ -414,7 +418,7 @@ def revisar_sessao(
     _evento(
         db,
         sessao,
-        datetime.now(),
+        agora,
         "revisao",
         {"decisao": decisao, "ajuste_valor": ajuste_valor, "observacao": observacao, "usuario_id": usuario_id},
     )
@@ -424,7 +428,7 @@ def revisar_sessao(
         alerta.status = "resolvido"
         alerta.resolucao = f"{decisao}: {observacao}".strip(": ")
     if sessao.usuario_id is not None:
-        notificacoes.notificar_revisao(db, sessao, decisao, sessao.ajuste_valor, observacao)
+        notificacoes.notificar_revisao(db, sessao, decisao, sessao.ajuste_valor, observacao, da_quarentena, agora)
     marcar_fatura_desatualizada(db, sessao)
     db.commit()
     return sessao

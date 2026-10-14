@@ -2,11 +2,13 @@
 
 Cada aviso é gravado na tabela notificacoes, que alimenta a caixa de avisos da
 Área do morador, e também passa pelo enviador configurado. No protótipo o
-enviador só escreve uma linha de log; o canal real (WhatsApp, e-mail ou push)
-entra implementando a interface Enviador, sem mexer no resto do fluxo.
+enviador só escreve uma linha de log.
 
 As funções daqui não fazem commit: quem chama (encerrar_sessao, revisar_sessao)
-grava o aviso na mesma transação da sessão.
+grava o aviso na mesma transação da sessão. Por isso o envio acontece antes do
+commit; para o log isso não importa, mas um canal real (WhatsApp, e-mail ou
+push) deve enviar só depois do commit (por exemplo, lendo os avisos gravados),
+para nunca avisar o morador de algo que foi desfeito.
 """
 import logging
 from datetime import datetime
@@ -26,8 +28,9 @@ MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "a
 
 
 class Enviador(Protocol):
-    """Canal de envio. É aqui que entram WhatsApp, e-mail ou push: basta uma
-    classe com este método, registrada com usar_enviador()."""
+    """Canal de envio. É aqui que entram WhatsApp, e-mail ou push: uma classe
+    com este método, registrada com usar_enviador() (ver o aviso sobre o commit
+    no topo do módulo)."""
 
     def enviar(self, n: m.Notificacao, usuario: m.Usuario) -> None: ...
 
@@ -81,21 +84,26 @@ def _registrar(db: Session, sessao: m.SessaoRecarga, tipo: str, titulo: str, men
     return n
 
 
-def notificar_resumo_sessao(db: Session, sessao: m.SessaoRecarga, motivos: list[dict],
-                            quando: datetime) -> m.Notificacao:
-    """Resumo da recarga encerrada: energia, duração, ociosidade, valor e situação da cobrança."""
+def _resumo(db: Session, sessao: m.SessaoRecarga) -> str:
+    """Energia, duração, ociosidade e valor da sessão (sem a situação da cobrança)."""
     ociosa = ""
     if sessao.minutos_ociosos >= 1:
         ociosa = f", com {_duracao(sessao.minutos_ociosos)} de vaga ocupada após a carga"
-    mensagem = (
+    return (
         f"Recarga de {_quando(sessao)}: {br(sessao.kwh_entregue)} kWh em {_duracao(sessao.duracao_min)}{ociosa}. "
         f"Valor da sessão: {_reais(valor_da_sessao(db, sessao))} (energia, perdas e ociosidade; "
         f"a taxa de infraestrutura é mensal)."
     )
+
+
+def notificar_resumo_sessao(db: Session, sessao: m.SessaoRecarga, motivos: list[dict],
+                            quando: datetime) -> m.Notificacao:
+    """Resumo da recarga encerrada: energia, duração, ociosidade, valor e situação da cobrança."""
+    mensagem = _resumo(db, sessao)
     if sessao.status_cobranca == m.COBRANCA_REVISAO_IA:
         # o primeiro motivo que retém a cobrança (os de severidade baixa só avisam)
         motivo = next(mo for mo in motivos if mo["severidade"] != "baixa")
-        mensagem += (f" Situação: em revisão pelo gestor ({motivo['descricao'].rstrip('.')}). "
+        mensagem += (f" Situação: em revisão pelo gestor: {motivo['descricao'].rstrip('.')}. "
                      f"Só entra na fatura depois da revisão.")
     else:
         mensagem += f" Situação: liberada para a fatura de {_mes(sessao)}."
@@ -120,17 +128,20 @@ def notificar_ociosidade(db: Session, sessao: m.SessaoRecarga, quando: datetime)
 
 
 def notificar_revisao(db: Session, sessao: m.SessaoRecarga, decisao: str, ajuste_valor: float,
-                      observacao: str) -> m.Notificacao:
-    """Decisão do gestor sobre uma sessão retida (ou atribuída à unidade, na quarentena)."""
+                      observacao: str, da_quarentena: bool, quando: datetime) -> m.Notificacao:
+    """Decisão do gestor sobre uma sessão retida pela IA ou atribuída à unidade (quarentena)."""
     obs = f" ({observacao})" if observacao else ""
+    credito = f" com crédito de {_reais(ajuste_valor)}" if ajuste_valor > 0 else ""
     if decisao == "descartar":
         titulo = "Recarga não será cobrada"
         mensagem = f"A recarga de {_quando(sessao)} foi analisada pelo gestor e não será cobrada{obs}."
-    elif ajuste_valor > 0:
-        titulo = f"Crédito de {_reais(ajuste_valor)} concedido"
-        mensagem = (f"A recarga de {_quando(sessao)} foi analisada pelo gestor{obs} e entra na fatura de "
-                    f"{_mes(sessao)} com crédito de {_reais(ajuste_valor)}.")
+    elif da_quarentena:
+        # o morador não recebeu o resumo no encerramento (o cartão não foi reconhecido)
+        titulo = "Recarga atribuída à sua unidade"
+        mensagem = (f"{_resumo(db, sessao)} O gestor atribuiu esta recarga à sua unidade{obs}; "
+                    f"ela entra na fatura de {_mes(sessao)}{credito}.")
     else:
-        titulo = "Sessão liberada"
-        mensagem = f"A recarga de {_quando(sessao)} foi analisada pelo gestor{obs} e entra na fatura de {_mes(sessao)}."
-    return _registrar(db, sessao, "revisao", titulo, mensagem, datetime.now())
+        titulo = f"Recarga liberada{credito}"
+        mensagem = (f"A recarga de {_quando(sessao)} foi analisada pelo gestor{obs} e entra na fatura de "
+                    f"{_mes(sessao)}{credito}.")
+    return _registrar(db, sessao, "revisao", titulo, mensagem, quando)

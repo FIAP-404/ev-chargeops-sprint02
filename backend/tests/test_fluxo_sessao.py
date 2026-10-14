@@ -245,7 +245,31 @@ def test_credito_limitado_ao_valor_da_sessao(db):
     assert s.status_cobranca == m.COBRANCA_LIBERADA
     assert s.ajuste_valor == pytest.approx(39.90)
     [aviso] = avisos(db, s.id, "revisao")
-    assert aviso.titulo == "Crédito de R$ 39,90 concedido"
+    assert aviso.titulo == "Recarga liberada com crédito de R$ 39,90"
+
+
+def test_sessao_descartada_avisa_que_nao_sera_cobrada(db):
+    s = recarga(db, "RFID-A1204-02", 40, horas_carga=6)
+    decisao = datetime(2026, 9, 1)
+    revisar_sessao(db, s.id, "descartar", observacao="erro de medição confirmado", agora=decisao)
+    [aviso] = avisos(db, s.id, "revisao")
+    assert aviso.titulo == "Recarga não será cobrada" and "erro de medição confirmado" in aviso.mensagem
+    # o aviso leva a data da decisão (no simulador, a virada do mês), igual ao evento da revisão
+    revisao = db.scalar(
+        select(m.EventoSessao).where(m.EventoSessao.sessao_id == s.id, m.EventoSessao.tipo_evento == "revisao")
+    )
+    assert aviso.criado_em == decisao and revisao.timestamp == decisao
+
+
+def test_quarentena_atribuida_envia_resumo_ao_morador(db):
+    s = recarga(db, "CARTAO-NAO-CADASTRADO", 10)
+    usuario = db.scalar(select(m.Usuario).where(m.Usuario.email == "rafael.a302@exemplo.com"))
+    revisar_sessao(db, s.id, "liberar", usuario_id=usuario.id, observacao="visitante do A-302")
+    [aviso] = avisos(db, s.id)
+    assert aviso.usuario_id == usuario.id and aviso.titulo == "Recarga atribuída à sua unidade"
+    # 10 kWh × R$ 0,95 = R$ 9,50 + 5% de perdas = R$ 9,98
+    assert "10,0 kWh" in aviso.mensagem and "R$ 9,98" in aviso.mensagem
+    assert "fatura de agosto de 2026" in aviso.mensagem
 
 
 def test_fatura_do_exemplo_sprint01_via_fluxo_completo(db):

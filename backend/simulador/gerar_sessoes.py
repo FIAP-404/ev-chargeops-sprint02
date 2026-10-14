@@ -282,14 +282,14 @@ class Simulador:
         self.db.commit()
 
     def fechar_mes(self, mes: str, agora: datetime) -> None:
-        revisar_pendencias_do_gestor(self.db, mes, self.rng)
+        revisar_pendencias_do_gestor(self.db, mes, self.rng, agora)
         gerar_faturas(self.db, mes)
         info = ia.treinar_modelos(self.db, agora)
         print(f"  {mes}: faturas geradas | IA retreinada: "
               f"anomalias={info['anomalias'].get('treinado')} demanda={info['demanda'].get('treinado')}")
 
 
-def revisar_pendencias_do_gestor(db, mes: str, rng: random.Random) -> None:
+def revisar_pendencias_do_gestor(db, mes: str, rng: random.Random, agora: datetime) -> None:
     """Simula a síndica tratando os alertas do mês antes de fechar as faturas."""
     from app.faturamento import limites_do_mes
 
@@ -308,13 +308,14 @@ def revisar_pendencias_do_gestor(db, mes: str, rng: random.Random) -> None:
         if s.status_cobranca == m.COBRANCA_QUARENTENA:
             anfitriao = rng.choice(moradores)
             revisar_sessao(db, s.id, "liberar", usuario_id=anfitriao.id,
-                           observacao=f"visitante de {anfitriao.nome}")
+                           observacao=f"visitante de {anfitriao.nome}", agora=agora)
         elif codigos & {"kwh_acima_da_bateria", "conectado_sem_carregar"}:
-            revisar_sessao(db, s.id, "descartar", observacao="erro de medição confirmado")
+            revisar_sessao(db, s.id, "descartar", observacao="erro de medição confirmado", agora=agora)
         elif "falha_equipamento" in codigos:
-            revisar_sessao(db, s.id, "liberar", ajuste_valor=5.0, observacao="falha confirmada, crédito de R$ 5")
+            revisar_sessao(db, s.id, "liberar", ajuste_valor=5.0, observacao="falha confirmada, crédito de R$ 5",
+                           agora=agora)
         else:
-            revisar_sessao(db, s.id, "liberar", observacao="leitura conferida")
+            revisar_sessao(db, s.id, "liberar", observacao="leitura conferida", agora=agora)
 
     # avisos de ociosidade dos meses fechados são dados como tratados
     for alerta in db.scalars(

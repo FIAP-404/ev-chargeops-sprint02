@@ -1,7 +1,7 @@
 """Caixa de avisos do morador (resumo das recargas, ociosidade e decisões do gestor)."""
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,7 +13,12 @@ router = APIRouter(tags=["Avisos ao morador"])
 
 
 @router.get("/usuarios/{usuario_id}/notificacoes")
-def listar(usuario_id: int, nao_lidas: bool = False, limite: int = 20, db: Session = Depends(get_db)):
+def listar(
+    usuario_id: int,
+    nao_lidas: bool = False,
+    limite: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     if db.get(m.Usuario, usuario_id) is None:
         raise HTTPException(404, "Usuário não encontrado")
     # não lidos primeiro, depois do mais recente para o mais antigo
