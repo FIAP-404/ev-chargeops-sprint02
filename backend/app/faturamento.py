@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 from app import models as m
 from app.rateio import ParametrosCalculo, SessaoRateio, calcular_rateio
 
+# sessões do mês que ainda podem entrar na fatura: retidas pela IA ou ainda abertas
+PENDENTES = (m.COBRANCA_REVISAO_IA, m.COBRANCA_AGUARDANDO)
+
 
 def limites_do_mes(mes: str) -> tuple[datetime, datetime]:
     """'2026-08' -> (2026-08-01 00:00, 2026-09-01 00:00)."""
@@ -42,6 +45,19 @@ def parametros_calculo(p: m.ParametrosRateio) -> ParametrosCalculo:
         tolerancia_ociosidade_min=p.tolerancia_ociosidade_min,
         penalidade_ociosidade_hora=p.penalidade_ociosidade_hora,
     )
+
+
+def marcar_fatura_desatualizada(db: Session, sessao: m.SessaoRecarga) -> None:
+    """Sessão encerrada ou revisada depois do fechamento: a fatura do mês de
+    início deixa de bater com as sessões e precisa ser gerada de novo."""
+    fatura = db.scalar(
+        select(m.Fatura).where(
+            m.Fatura.unidade_id == sessao.unidade_id,
+            m.Fatura.mes_referencia == sessao.inicio_em.strftime("%Y-%m"),
+        )
+    )
+    if fatura is not None:
+        fatura.status = "desatualizada"
 
 
 def valor_da_sessao(db: Session, sessao: m.SessaoRecarga) -> float:
@@ -87,7 +103,7 @@ def _para_rateio(sessoes: list[m.SessaoRecarga]) -> list[SessaoRateio]:
 def calcular_unidade(db: Session, unidade_id: int, mes: str) -> dict:
     """Prévia da fatura (não grava nada). Usada na área do usuário durante o mês."""
     sessoes = _sessoes_da_unidade(db, unidade_id, mes, (m.COBRANCA_LIBERADA, m.COBRANCA_FATURADA))
-    pendentes = _sessoes_da_unidade(db, unidade_id, mes, (m.COBRANCA_REVISAO_IA,))
+    pendentes = _sessoes_da_unidade(db, unidade_id, mes, PENDENTES)
     resultado = calcular_rateio(_para_rateio(sessoes), parametros_calculo(obter_parametros(db)))
     dados = resultado.como_dict()
     dados["sessoes_ids"] = [s.id for s in sessoes]
@@ -98,15 +114,15 @@ def calcular_unidade(db: Session, unidade_id: int, mes: str) -> dict:
 def gerar_faturas(db: Session, mes: str) -> list[m.Fatura]:
     """Fecha o mês: gera (ou recalcula) a fatura de todas as unidades.
 
-    Sessões em quarentena/revisão não entram; ficam contadas em
-    sessoes_pendentes e, se o gestor liberar depois, basta gerar de novo.
+    Sessões em revisão ou ainda abertas não entram; ficam contadas em
+    sessoes_pendentes e, quando forem liberadas ou encerradas, basta gerar de novo.
     """
     params = parametros_calculo(obter_parametros(db))
     faturas = []
     agora = datetime.now()
     for unidade in db.scalars(select(m.Unidade).order_by(m.Unidade.bloco, m.Unidade.numero)):
         sessoes = _sessoes_da_unidade(db, unidade.id, mes, (m.COBRANCA_LIBERADA, m.COBRANCA_FATURADA))
-        pendentes = _sessoes_da_unidade(db, unidade.id, mes, (m.COBRANCA_REVISAO_IA,))
+        pendentes = _sessoes_da_unidade(db, unidade.id, mes, PENDENTES)
         r = calcular_rateio(_para_rateio(sessoes), params)
 
         fatura = db.scalar(

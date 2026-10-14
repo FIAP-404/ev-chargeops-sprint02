@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models as m
-from app.faturamento import valor_da_sessao
+from app.faturamento import marcar_fatura_desatualizada, valor_da_sessao
 from app.ia import servico as ia
 from app.ia.anomalias import br
 
@@ -244,6 +244,8 @@ def encerrar_sessao(
             # motivos de severidade baixa só geram aviso; média/alta também retêm a cobrança
             db.add(ia.alerta_da_avaliacao(sessao, avaliacao, fim_em))
 
+    # sessão aberta no fechamento do mês: a fatura já gerada ficou sem ela
+    marcar_fatura_desatualizada(db, sessao)
     db.commit()
     return sessao
 
@@ -302,6 +304,7 @@ def revisar_sessao(
     ):
         alerta.status = "resolvido"
         alerta.resolucao = f"{decisao}: {observacao}".strip(": ")
+    marcar_fatura_desatualizada(db, sessao)
     db.commit()
     return sessao
 
