@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from app import models as m
-from app.faturamento import gerar_faturas
+from app.faturamento import calcular_unidade, gerar_faturas
 from app.seed import CARREGADOR_ID
 from app.sessoes import encerrar_sessao, iniciar_sessao, registrar_telemetria, revisar_sessao
 
@@ -42,3 +42,15 @@ def test_revisao_apos_fechamento_marca_fatura_desatualizada(db):
     revisar_sessao(db, suspeita.id, "liberar", observacao="leitura conferida")
     assert f.status == "desatualizada"
     assert _fatura(db, "2026-08").kwh_total == pytest.approx(40)
+
+
+def test_regerar_mes_mantem_parametros_da_fatura(db):
+    recarga(db, "RFID-A1204-01", 18.6)
+    f = _fatura(db, "2026-08")
+    assert f.valor_total == pytest.approx(38.55)
+
+    # a nova tarifa vale para os meses ainda abertos, não para o que já foi cobrado
+    db.get(m.ParametrosRateio, 1).tarifa_kwh = 1.50
+    db.commit()
+    assert _fatura(db, "2026-08").valor_total == pytest.approx(38.55)
+    assert calcular_unidade(db, f.unidade_id, "2026-08")["valor_total"] == pytest.approx(38.55)

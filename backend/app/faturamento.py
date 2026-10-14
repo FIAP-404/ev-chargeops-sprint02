@@ -2,6 +2,7 @@
 
 Liga o banco (sessões liberadas no mês) ao cálculo puro de app/rateio.py.
 """
+import dataclasses
 import json
 from datetime import datetime
 
@@ -45,6 +46,14 @@ def parametros_calculo(p: m.ParametrosRateio) -> ParametrosCalculo:
         tolerancia_ociosidade_min=p.tolerancia_ociosidade_min,
         penalidade_ociosidade_hora=p.penalidade_ociosidade_hora,
     )
+
+
+def _parametros_do_mes(db: Session, mes: str) -> ParametrosCalculo:
+    """Parâmetros guardados na fatura do mês, para que regerar não reprecifique o
+    que já foi cobrado. Mês sem fatura (ou fatura anterior a essa cópia): os atuais."""
+    fatura = db.scalar(select(m.Fatura).where(m.Fatura.mes_referencia == mes).order_by(m.Fatura.id).limit(1))
+    guardados = json.loads(fatura.memoria_calculo).get("parametros") if fatura else None
+    return ParametrosCalculo(**guardados) if guardados else parametros_calculo(obter_parametros(db))
 
 
 def marcar_fatura_desatualizada(db: Session, sessao: m.SessaoRecarga) -> None:
@@ -104,7 +113,7 @@ def calcular_unidade(db: Session, unidade_id: int, mes: str) -> dict:
     """Prévia da fatura (não grava nada). Usada na área do usuário durante o mês."""
     sessoes = _sessoes_da_unidade(db, unidade_id, mes, (m.COBRANCA_LIBERADA, m.COBRANCA_FATURADA))
     pendentes = _sessoes_da_unidade(db, unidade_id, mes, PENDENTES)
-    resultado = calcular_rateio(_para_rateio(sessoes), parametros_calculo(obter_parametros(db)))
+    resultado = calcular_rateio(_para_rateio(sessoes), _parametros_do_mes(db, mes))
     dados = resultado.como_dict()
     dados["sessoes_ids"] = [s.id for s in sessoes]
     dados["sessoes_pendentes"] = [s.id for s in pendentes]
@@ -116,8 +125,9 @@ def gerar_faturas(db: Session, mes: str) -> list[m.Fatura]:
 
     Sessões em revisão ou ainda abertas não entram; ficam contadas em
     sessoes_pendentes e, quando forem liberadas ou encerradas, basta gerar de novo.
+    Regerar usa os parâmetros guardados na primeira geração do mês.
     """
-    params = parametros_calculo(obter_parametros(db))
+    params = _parametros_do_mes(db, mes)
     faturas = []
     agora = datetime.now()
     for unidade in db.scalars(select(m.Unidade).order_by(m.Unidade.bloco, m.Unidade.numero)):
@@ -140,7 +150,12 @@ def gerar_faturas(db: Session, mes: str) -> list[m.Fatura]:
         fatura.status = "fechada" if not pendentes else "fechada_com_pendencias"
         fatura.gerada_em = agora
         fatura.memoria_calculo = json.dumps(
-            {"linhas": r.memoria, "kwh_por_veiculo": r.por_veiculo, "sessoes": [s.id for s in sessoes]},
+            {
+                "linhas": r.memoria,
+                "kwh_por_veiculo": r.por_veiculo,
+                "sessoes": [s.id for s in sessoes],
+                "parametros": dataclasses.asdict(params),
+            },
             ensure_ascii=False,
         )
         db.add(fatura)
