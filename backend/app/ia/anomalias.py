@@ -75,6 +75,15 @@ def features_da_sessao(duracao_min: float, kwh: float, potencia_media_kw: float,
     }
 
 
+def potencia_saudavel(feats: dict) -> bool:
+    """Potência média e pico dentro do esperado para o veículo.
+
+    Uma recarga assim não é cabo nem medidor com defeito, mesmo que a curva
+    seja mais "reta" que o histórico (potência constante do começo ao fim).
+    """
+    return 0.8 <= feats["razao_potencia"] <= 1.1 and feats["razao_pico"] <= 1.1
+
+
 @dataclass
 class Motivo:
     codigo: str

@@ -32,6 +32,7 @@ from app.ia.anomalias import (
     aplicar_regras,
     br,
     features_da_sessao,
+    potencia_saudavel,
 )
 from app.ia.previsao import PrevisorDemanda, analisar_capacidade, montar_base_demanda, projetar_kwh_restante
 
@@ -140,8 +141,10 @@ def avaliar_sessao_encerrada(db: Session, sessao: m.SessaoRecarga) -> Avaliacao:
     score = None
     if resultado_modelo is not None:
         score = resultado_modelo.percentil
-        # o modelo só acrescenta motivo se nenhuma regra já explicou a sessão
-        if resultado_modelo.outlier and not any(mo.severidade in ("media", "alta") for mo in motivos):
+        # o modelo só acrescenta motivo se nenhuma regra já explicou a sessão e se a
+        # potência não está dentro do esperado (curva reta com potência certa não é defeito)
+        if (resultado_modelo.outlier and not potencia_saudavel(feats)
+                and not any(mo.severidade in ("media", "alta") for mo in motivos)):
             detalhe = "; ".join(resultado_modelo.desvios) or "combinação incomum de duração, energia e potência"
             motivos.append(Motivo(
                 "padrao_atipico",
