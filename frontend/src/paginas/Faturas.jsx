@@ -38,7 +38,11 @@ export default function Faturas() {
       const pend = lista.reduce((s, f) => s + f.sessoes_pendentes, 0);
       setMensagem(
         `${lista.length} faturas geradas para ${nomeMes(mes)}.` +
-          (pend ? ` ${pend} sessões em revisão ficaram de fora; gere de novo depois de decidir.` : "")
+          (pend === 1
+            ? " 1 sessão pendente (em revisão ou ainda aberta) ficou de fora; gere de novo depois que ela for decidida ou encerrada."
+            : pend
+              ? ` ${pend} sessões pendentes (em revisão ou ainda abertas) ficaram de fora; gere de novo depois que forem decididas ou encerradas.`
+              : "")
       );
       historico.recarregar();
     } finally {
@@ -112,7 +116,13 @@ export default function Faturas() {
                       tabIndex={0}
                       onKeyDown={(e) => e.key === "Enter" && setSelecionada(f)}
                     >
-                      <td>{f.unidade}{f.sessoes_pendentes > 0 && <span className="mudo"> ({f.sessoes_pendentes} em revisão)</span>}</td>
+                      <td>
+                        {f.unidade}
+                        {f.sessoes_pendentes > 0 && (
+                          <span className="mudo"> ({f.sessoes_pendentes} {f.sessoes_pendentes === 1 ? "pendente" : "pendentes"})</span>
+                        )}
+                        {f.status === "desatualizada" && <span className="mudo"> (desatualizada: gere o mês de novo)</span>}
+                      </td>
                       <td className="num">{f.qtd_sessoes}</td>
                       <td className="num">{kwh(f.kwh_total)}</td>
                       <td className="num">{brl(f.valor_ociosidade)}</td>

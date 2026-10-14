@@ -209,6 +209,9 @@ export default function PainelGestor() {
               </tbody>
             </table>
           </div>
+          <p className="mudo" style={{ marginTop: 8 }}>
+            Valores incluem sessões ainda em revisão; a fatura cobra só as liberadas.
+          </p>
         </section>
       )}
     </>

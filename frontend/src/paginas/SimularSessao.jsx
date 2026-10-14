@@ -58,7 +58,8 @@ export default function SimularSessao() {
     try {
       // a sessão termina "agora": o início é calculado para trás, sem invadir a
       // recarga anterior (a API recusa sessões sobrepostas no mesmo carregador).
-      // fim_em vem sem os segundos, por isso o minuto a mais.
+      // fim_em vem sem os segundos, por isso o minuto a mais. Cliques seguidos
+      // encadeiam as recargas, então a simulada pode terminar no futuro.
       const [ultima] = await api("/sessoes?limite=1");
       const livreEm = ultima?.fim_em ? new Date(ultima.fim_em).getTime() + 60000 : 0;
       const inicio = new Date(Math.max(Date.now() - duracaoMs, livreEm));
