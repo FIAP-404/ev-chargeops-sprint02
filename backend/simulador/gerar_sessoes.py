@@ -5,7 +5,7 @@ geramos ~6 meses de uso de um condomínio com um carregador compartilhado.
 
 Ponto importante: o simulador NÃO grava direto no banco. Ele faz o papel do
 carregador e dos moradores e chama as mesmas funções que a API usa
-(iniciar_sessao, registrar_telemetria, encerrar_sessao). Assim os dados
+(iniciar_sessao/iniciar_sessao_app, registrar_telemetria, encerrar_sessao). Assim os dados
 simulados passam pelas mesmas regras, pela IA e pelo rateio que os dados
 reais passariam.
 
@@ -16,6 +16,7 @@ O que o simulador reproduz:
 - disputa pelo carregador: quem chega e encontra ocupado gera uma tentativa
   registrada e às vezes volta mais tarde;
 - ociosidade depois da carga completa e sessões interrompidas;
+- ~30% das sessões iniciadas pelo app (QR Code do carregador) em vez do cartão;
 - ~4% de anomalias injetadas (falha de medição, pico de potência, cabo com
   defeito, conectado sem carregar, falha do carregador, cartão desconhecido).
 
@@ -34,11 +35,12 @@ from app import models as m
 from app.database import Base, SessionLocal, engine
 from app.faturamento import gerar_faturas
 from app.ia import servico as ia
-from app.seed import CADASTRO, CARREGADOR_ID, popular_cadastro
+from app.seed import CADASTRO, CARREGADOR_ID, QR_TOKEN_CARREGADOR, popular_cadastro
 from app.sessoes import (
     encerrar_sessao,
     hash_rfid,
     iniciar_sessao,
+    iniciar_sessao_app,
     registrar_tentativa_ocupado,
     registrar_telemetria,
     revisar_sessao,
@@ -100,11 +102,14 @@ TIPOS_ANOMALIA = [
 
 class Simulador:
     def __init__(self, db, rng: random.Random, inicio: datetime, ate: datetime, fator_demanda: float = 0.65,
-                 taxa_anomalias: float = 0.07):
+                 taxa_anomalias: float = 0.07, rng_metodo: random.Random | None = None):
         self.taxa_anomalias = taxa_anomalias  # chance de uma anomalia por dia
         self.db = db
         self.fator_demanda = fator_demanda  # multiplica a frequência de todos os perfis
         self.rng = rng
+        # sorteio separado para RFID x app: usar self.rng mudaria todas as sessões
+        # geradas depois do primeiro sorteio (e os números citados no README)
+        self.rng_metodo = rng_metodo or random.Random(1_000_003)
         self.inicio = inicio
         self.ate = ate
         self.medidor = 1520.0  # leitura acumulada do medidor do carregador (kWh)
@@ -189,7 +194,17 @@ class Simulador:
         if anomalia == "sem_carregar":
             horas_carga = rng.uniform(1.5, 3.0)
 
-        sessao = iniciar_sessao(self.db, CARREGADOR_ID, rfid, inicio, self.medidor)
+        # visitante não tem o app; os moradores usam o app em ~30% das recargas
+        usa_app = anomalia != "cartao_desconhecido" and self.rng_metodo.random() < 0.30
+        if usa_app:
+            cred = self.db.scalar(
+                select(m.CredencialRFID).where(m.CredencialRFID.codigo_rfid_hash == hash_rfid(perfil.rfid))
+            )
+            sessao = iniciar_sessao_app(
+                self.db, CARREGADOR_ID, QR_TOKEN_CARREGADOR, cred.usuario_id, cred.veiculo_id, inicio, self.medidor
+            )
+        else:
+            sessao = iniciar_sessao(self.db, CARREGADOR_ID, rfid, inicio, self.medidor)
         if anomalia:
             self.gabarito.append({"sessao_id": sessao.id, "tipo": anomalia, "inicio_em": inicio.isoformat()})
         t, energia, fim_carga = inicio, 0.0, inicio + timedelta(minutes=max(round(horas_carga * 60), 1))
@@ -343,7 +358,8 @@ def main() -> None:
     popular_cadastro(db)
 
     print(f"Simulando de {inicio:%d/%m/%Y} até {ate:%d/%m/%Y %H:%M} (seed={args.seed})...")
-    sim = Simulador(db, random.Random(args.seed), inicio, ate, args.fator_demanda, args.taxa_anomalias)
+    sim = Simulador(db, random.Random(args.seed), inicio, ate, args.fator_demanda, args.taxa_anomalias,
+                    rng_metodo=random.Random(args.seed + 1_000_003))
     if args.sem_roteiro:
         sim.roteiro = {}
     sim.rodar()
