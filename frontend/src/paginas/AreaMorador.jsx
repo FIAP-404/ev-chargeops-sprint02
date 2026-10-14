@@ -13,6 +13,7 @@ export default function AreaMorador() {
   const usuarios = useApi("/usuarios");
   const [usuarioId, setUsuarioId] = useState(null);
   const [faturaAberta, setFaturaAberta] = useState(null);
+  const [erroAviso, setErroAviso] = useState(null);
 
   useEffect(() => {
     if (usuarios.dados && !usuarioId) {
@@ -23,12 +24,20 @@ export default function AreaMorador() {
 
   const painel = useApi(usuarioId ? `/usuarios/${usuarioId}/painel` : null);
   const avisos = useApi(usuarioId ? `/usuarios/${usuarioId}/notificacoes` : null);
-  useEffect(() => setFaturaAberta(null), [usuarioId]);
+  useEffect(() => {
+    setFaturaAberta(null);
+    setErroAviso(null);
+  }, [usuarioId]);
 
   async function marcarComoLida(aviso) {
-    await api(`/notificacoes/${aviso.id}/lida`, { metodo: "POST" });
-    avisos.recarregar();
-    painel.recarregar();
+    setErroAviso(null);
+    try {
+      await api(`/notificacoes/${aviso.id}/lida`, { metodo: "POST" });
+      avisos.recarregar();
+      painel.recarregar();
+    } catch (err) {
+      setErroAviso(err.message);
+    }
   }
 
   if (usuarios.erro) return <ErroApi erro={usuarios.erro} />;
@@ -68,7 +77,11 @@ export default function AreaMorador() {
                   </span>
                 )}
               </header>
-              {!avisos.dados?.length ? (
+              {avisos.erro ? (
+                <ErroApi erro={avisos.erro} />
+              ) : !avisos.dados ? (
+                <p className="vazio">Carregando…</p>
+              ) : avisos.dados.length === 0 ? (
                 <p className="vazio">Nenhum aviso.</p>
               ) : (
                 <ul className="avisos-lista">
@@ -87,6 +100,7 @@ export default function AreaMorador() {
                   ))}
                 </ul>
               )}
+              {erroAviso && <p className="erro">{erroAviso}</p>}
             </section>
 
             {p.projecao_ia && (
