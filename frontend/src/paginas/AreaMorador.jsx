@@ -124,7 +124,10 @@ export default function AreaMorador() {
                       {p.sessoes.map((s) => (
                         <tr key={s.id}>
                           <td>{dataHora(s.inicio_em)}</td>
-                          <td>{s.veiculo?.split(" (")[0] ?? "—"}</td>
+                          <td>
+                            {s.veiculo?.split(" (")[0] ?? "—"}
+                            <div className="mudo">{s.metodo_identificacao === "app_qr" ? "via app" : "via RFID"}</div>
+                          </td>
                           <td className="num">{kwh(s.kwh_entregue)}</td>
                           <td className="num">
                             {duracao(s.duracao_min)}

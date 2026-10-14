@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, useApi } from "../api";
 import { StatusCobranca, textoStatusFinal } from "../componentes/Status";
 import { duracao, kwh, num } from "../formatos";
 
@@ -14,6 +14,9 @@ const CARTOES = [
   ["CARTAO-VISITANTE", "Cartão não cadastrado (visitante)", 7.0],
 ];
 
+// Texto do QR Code colado no carregador (o mesmo de app/seed.py)
+const QR_CARREGADOR = "QR-HCA01-7F3A";
+
 const CENARIOS = {
   normal: { nome: "Recarga normal", kwh: 14, ociosoMin: 12 },
   ociosa: { nome: "Carro esquecido na vaga após a carga (4 h)", kwh: 12, ociosoMin: 240 },
@@ -27,14 +30,24 @@ const isoLocal = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).to
 
 /**
  * Faz o papel do carregador: chama a API passo a passo (iniciar, telemetria,
- * encerrar), exatamente como um gateway conectado ao HCA G2 faria.
+ * encerrar), exatamente como um gateway conectado ao HCA G2 faria. No modo
+ * app, o início vem do app do morador que leu o QR Code do carregador.
  */
 export default function SimularSessao() {
+  const [modo, setModo] = useState("rfid");
   const [cartao, setCartao] = useState(CARTOES[0][0]);
+  const usuarios = useApi("/usuarios");
+  const [usuarioId, setUsuarioId] = useState(null);
+  const [veiculoId, setVeiculoId] = useState(null);
   const [cenario, setCenario] = useState("normal");
   const [registro, setRegistro] = useState([]);
   const [resultado, setResultado] = useState(null);
   const [rodando, setRodando] = useState(false);
+
+  // no app só entra morador com unidade e veículo; sem escolha, fica o primeiro
+  const moradores = (usuarios.dados ?? []).filter((u) => u.unidade && u.veiculos_detalhe.length > 0);
+  const morador = moradores.find((u) => u.id === usuarioId) ?? moradores[0];
+  const veiculo = morador?.veiculos_detalhe.find((v) => v.id === veiculoId) ?? morador?.veiculos_detalhe[0];
 
   const fimDoRegistro = useRef(null);
   const log = (t, texto) => setRegistro((r) => [...r, { t, texto }]);
@@ -50,7 +63,8 @@ export default function SimularSessao() {
     setRegistro([]);
     setResultado(null);
     const c = CENARIOS[cenario];
-    const potencia = c.potencia ?? CARTOES.find((x) => x[0] === cartao)[2] * 0.95;
+    const potenciaVeiculo = modo === "app" ? Math.min(veiculo.potencia_ac_max_kw, 7.4) : CARTOES.find((x) => x[0] === cartao)[2];
+    const potencia = c.potencia ?? potenciaVeiculo * 0.95;
     const horasCarga = (c.kwh / potencia) * (c.falha ?? 1);
     const duracaoMs = (horasCarga * 60 + c.ociosoMin) * 60000;
     const hora = (d) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -67,12 +81,21 @@ export default function SimularSessao() {
       const fim = new Date(fimCarga.getTime() + c.ociosoMin * 60000);
 
       // sem leitura_inicial_kwh, a API continua o medidor de onde a última sessão parou
-      const sessao = await api("/sessoes/iniciar", {
-        metodo: "POST",
-        corpo: { codigo_rfid: cartao, inicio_em: isoLocal(inicio) },
-      });
+      const sessao = modo === "app"
+        ? await api("/sessoes/iniciar-app", {
+          metodo: "POST",
+          corpo: { qr_token: QR_CARREGADOR, usuario_id: morador.id, veiculo_id: veiculo.id, inicio_em: isoLocal(inicio) },
+        })
+        : await api("/sessoes/iniciar", {
+          metodo: "POST",
+          corpo: { codigo_rfid: cartao, inicio_em: isoLocal(inicio) },
+        });
       const leituraInicial = sessao.leitura_inicial_kwh;
-      log(hora(inicio), `RFID lido. Sessão #${sessao.id} aberta ${sessao.unidade ? `para a unidade ${sessao.unidade}` : "sem morador identificado"}. Medidor em ${num(leituraInicial, 0)} kWh.`);
+      if (modo === "app") {
+        log(hora(inicio), `QR Code lido pelo app. Sessão #${sessao.id} aberta para a unidade ${sessao.unidade}. Medidor em ${num(leituraInicial, 0)} kWh.`);
+      } else {
+        log(hora(inicio), `RFID lido. Sessão #${sessao.id} aberta ${sessao.unidade ? `para a unidade ${sessao.unidade}` : "sem morador identificado"}. Medidor em ${num(leituraInicial, 0)} kWh.`);
+      }
 
       let t = new Date(inicio);
       let energia = 0;
@@ -126,8 +149,9 @@ export default function SimularSessao() {
         <div>
           <h1>Simular uma recarga</h1>
           <p>
-            Esta tela faz o papel do carregador: lê o cartão, envia a telemetria e encerra a sessão pela API. O resultado
-            passa pelas mesmas regras, pela IA e pelo rateio de uma recarga real.
+            Esta tela faz o papel do carregador: identifica o morador pelo cartão ou pelo QR Code lido no app, envia a
+            telemetria e encerra a sessão pela API. O resultado passa pelas mesmas regras, pela IA e pelo rateio de uma
+            recarga real.
           </p>
         </div>
       </header>
@@ -136,12 +160,53 @@ export default function SimularSessao() {
         <section className="bloco" aria-labelledby="t-config">
           <header><h2 id="t-config">Recarga</h2></header>
           <div className="pilha" style={{ gap: 14 }}>
-            <label className="campo">
-              Cartão RFID
-              <select value={cartao} onChange={(e) => setCartao(e.target.value)}>
-                {CARTOES.map(([cod, nome]) => <option key={cod} value={cod}>{nome}</option>)}
-              </select>
-            </label>
+            <fieldset className="opcoes">
+              <legend>Identificação</legend>
+              <label>
+                <input type="radio" name="modo" checked={modo === "rfid"} onChange={() => setModo("rfid")} />
+                Cartão RFID
+              </label>
+              <label>
+                <input type="radio" name="modo" checked={modo === "app"} onChange={() => setModo("app")} />
+                App (QR Code)
+              </label>
+            </fieldset>
+            {modo === "rfid" ? (
+              <label className="campo">
+                Cartão RFID
+                <select value={cartao} onChange={(e) => setCartao(e.target.value)}>
+                  {CARTOES.map(([cod, nome]) => <option key={cod} value={cod}>{nome}</option>)}
+                </select>
+              </label>
+            ) : (
+              <>
+                <div className="qr-adesivo">
+                  <code>{QR_CARREGADOR}</code>
+                  <span>Adesivo do carregador, Estacionamento L1</span>
+                </div>
+                <label className="campo">
+                  Morador (app)
+                  <select
+                    value={morador?.id ?? ""}
+                    onChange={(e) => { setUsuarioId(Number(e.target.value)); setVeiculoId(null); }}
+                  >
+                    {moradores.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.unidade}, {u.nome} ({u.veiculos_detalhe.map((v) => v.modelo).join(" e ")})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {morador?.veiculos_detalhe.length > 1 && (
+                  <label className="campo">
+                    Veículo
+                    <select value={veiculo.id} onChange={(e) => setVeiculoId(Number(e.target.value))}>
+                      {morador.veiculos_detalhe.map((v) => <option key={v.id} value={v.id}>{v.modelo} ({v.placa})</option>)}
+                    </select>
+                  </label>
+                )}
+              </>
+            )}
             <label className="campo">
               Situação
               <select value={cenario} onChange={(e) => setCenario(e.target.value)}>
@@ -149,8 +214,13 @@ export default function SimularSessao() {
               </select>
             </label>
             <div>
-              <button className="botao" onClick={executar} disabled={rodando} aria-busy={rodando || undefined}>
-                {rodando ? "Recarregando…" : "Iniciar recarga"}
+              <button
+                className="botao"
+                onClick={executar}
+                disabled={rodando || (modo === "app" && !veiculo)}
+                aria-busy={rodando || undefined}
+              >
+                {rodando ? "Recarregando…" : modo === "app" ? "Ler QR Code e iniciar recarga" : "Iniciar recarga"}
               </button>
             </div>
           </div>
@@ -164,7 +234,7 @@ export default function SimularSessao() {
             <p>uma leitura a cada 15 min</p>
           </header>
           {registro.length === 0 ? (
-            <p className="vazio">Escolha o cartão e a situação e inicie a recarga.</p>
+            <p className="vazio">Escolha a identificação e a situação e inicie a recarga.</p>
           ) : (
             <ol className="registro" aria-live="polite" ref={fimDoRegistro}>
               {registro.map((r, i) => (

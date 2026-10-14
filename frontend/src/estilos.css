@@ -258,7 +258,24 @@ a.botao { text-decoration: none; }
 .campo .campo-reais input { flex: 1; height: 100%; border: 0; background: transparent; padding: 0 12px 0 6px; }
 .campo .campo-reais input:focus-visible { outline: none; }
 .linha-controles { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-input[type="checkbox"] { accent-color: var(--marca); }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--marca); }
+
+/* escolha entre opções curtas (ex.: cartão RFID ou app) */
+.opcoes { border: 0; margin: 0; padding: 0; display: flex; gap: 18px; flex-wrap: wrap; }
+.opcoes legend { padding: 0; margin-bottom: 6px; font-size: 0.83rem; color: var(--tinta-2); font-weight: 500; }
+.opcoes label { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer; }
+
+/* adesivo com o QR Code colado no carregador */
+.qr-adesivo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 2px dashed var(--linha-forte);
+  border-radius: var(--raio-pequeno);
+}
+.qr-adesivo code { font-size: 1rem; font-weight: 650; letter-spacing: 0.04em; }
+.qr-adesivo span { color: var(--tinta-3); font-size: 0.76rem; }
 
 /* ---------- tabelas ---------- */
 .tabela-rolagem { overflow-x: auto; }
