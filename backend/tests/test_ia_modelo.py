@@ -77,6 +77,16 @@ def test_curva_achatada_com_potencia_saudavel_nao_retem(db):
     assert json.loads(s.anomalia_motivos) == []
 
 
+def test_media_acima_do_pico_continua_retida(db):
+    leitura = historico(db, achatadas=False)
+    ia.treinar_modelos(db, T0)
+    # média 105% do esperado com pico em 90%: leitura inconsistente, a proteção não vale
+    s = recarga(db, "RFID-A1204-01", 20.8, horas_carga=3, potencia=5.94, leitura_inicial=leitura)
+    assert s.potencia_media_kw > s.potencia_max_kw
+    assert s.status_cobranca == m.COBRANCA_REVISAO_IA
+    assert [mo["codigo"] for mo in json.loads(s.anomalia_motivos)] == ["padrao_atipico"]
+
+
 def test_treino_na_inicializacao(db):
     # só o cadastro: abaixo do mínimo de sessões, a API sobe em cold start
     assert ia.treinar_se_necessario(db) is None
@@ -86,3 +96,15 @@ def test_treino_na_inicializacao(db):
     info = ia.treinar_se_necessario(db)
     assert info["anomalias"]["treinado"] and ia.ARQ_DETECTOR.exists()
     assert ia.detector().treinado
+    # com o detector salvo, a próxima subida não treina de novo (mesmo sem o previsor)
+    ia.ARQ_PREVISOR.unlink(missing_ok=True)
+    assert ia.treinar_se_necessario(db) is None
+
+
+def test_previsao_treina_com_semana_sem_chegadas(db):
+    # histórico de maio a julho visto em outubro: as 4 semanas de teste não têm chegadas
+    historico(db)
+    info = ia.treinar_modelos(db, datetime(2026, 10, 13, 15))
+    assert info["demanda"]["treinado"]
+    assert info["demanda"]["erro_semanal_medio_pct_modelo"] is None
+    assert ia.previsao_capacidade(db, datetime(2026, 10, 13, 15))["disponivel"]
