@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app import models as m
 from app.database import get_db
@@ -160,6 +161,12 @@ def test_listar_sessoes_mes_invalido_400(cliente):
 def test_listar_faturas_mes_invalido_400(cliente):
     assert cliente.get("/faturas", params={"mes": "xx"}).status_code == 400
     assert cliente.get("/faturas", params={"mes": "2026-08"}).status_code == 200
+
+
+def test_gerar_faturas_mes_invalido_400(cliente, db):
+    # "2026-1" passaria em limites_do_mes e gravaria faturas que GET /faturas e o CSV recusam
+    assert cliente.post("/faturas/gerar", params={"mes": "2026-1"}).status_code == 400
+    assert db.scalar(select(m.Fatura)) is None
 
 
 def test_csv_ordena_unidades_pelo_numero(cliente):

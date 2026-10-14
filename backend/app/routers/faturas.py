@@ -22,6 +22,7 @@ log = logging.getLogger("evchargeops.ia")
 
 @router.post("/faturas/gerar")
 def gerar(mes: str, db: Session = Depends(get_db)):
+    _validar_mes(mes)
     try:
         faturas = gerar_faturas(db, mes)
     except ValueError as erro:
