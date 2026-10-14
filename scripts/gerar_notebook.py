@@ -117,10 +117,12 @@ Toda sessão encerrada passa por `avaliar_sessao_encerrada()`:
 
 - **Regras de negócio** (kWh maior que a bateria, potência acima do limite, conectado sem carregar, falha, consumo
   muito acima do perfil, ociosidade longa);
-- **Isolation Forest**, treinado no histórico e retreinado a cada virada de mês. Olha a qualidade elétrica da recarga
-  em relação ao veículo: fração da bateria carregada, potência média ÷ esperada, potência máxima ÷ esperada e
-  potência média ÷ máxima. 3 kW é normal para um híbrido plug-in e é sinal de defeito num carro que carrega a 7 kW.
-  Sessões que a IA já apontou não entram no treino como exemplo de "normal", mesmo se o gestor liberar a cobrança.
+- **Isolation Forest**, treinado no histórico e retreinado sempre que as faturas de um mês são geradas (no simulador,
+  a cada virada de mês). Olha a qualidade elétrica da recarga em relação ao veículo: fração da bateria carregada,
+  potência média ÷ esperada, potência máxima ÷ esperada e potência média ÷ máxima. 3 kW é normal para um híbrido
+  plug-in e é sinal de defeito num carro que carrega a 7 kW. Sessões que a IA já apontou não entram no treino como
+  exemplo de "normal", mesmo se o gestor liberar a cobrança. O modelo não retém uma sessão com potência média entre
+  80% e 110% do esperado e pico até 110%: uma curva mais "reta" que o histórico, com a potência certa, não é defeito.
 
 O conjunto de variáveis foi escolhido por teste (ver README, "Decisões técnicas"). Versões anteriores usavam tempo
 ocioso, kWh e duração. A ociosidade dominava o modelo, e recargas curtas legítimas viravam alarme falso.
@@ -283,9 +285,10 @@ capacidade[capacidade.status != "ok"][["dia_nome", "faixa_nome", "ocupacao_proxi
 """)
 
 md("""
-**Leitura:** por hora, as contagens são quase sempre 0 ou 1, e o erro do modelo fica próximo ao da média
-histórica. O ganho aparece no total semanal: a média histórica não enxerga o crescimento da frota, e o termo de
-tendência do modelo, sim. É esse total por faixa do dia que alimenta os alertas de capacidade do painel do gestor.
+**Leitura:** por hora, o modelo erra um pouco mais que a média histórica (0,135 contra 0,126 chegada/hora no
+banco de demonstração), porque as contagens são quase sempre 0 ou 1. Ele só ganha no total semanal (erro de 34%
+contra 49%): a média histórica não enxerga o crescimento da frota, e o termo de tendência do modelo, sim. Por isso a
+previsão é usada somada por faixa de 6 h, e é esse total que alimenta os alertas de capacidade do painel do gestor.
 
 ## 5. Projeção da fatura do mês (área do morador)
 
@@ -295,6 +298,10 @@ e quanto consumiu de fato? Três métodos candidatos:
 - **histórico**: média diária das últimas 8 semanas para os dias que faltam;
 - **regra de três**: consumo até agora × dias do mês ÷ dias decorridos;
 - **mistura** (usada no sistema): ritmo do mês e média de 8 semanas, com peso proporcional aos dias decorridos.
+
+No backtest abaixo a mistura tem o menor erro geral, mas não ganha em todos os cortes: no dia 8 erra um pouco mais que
+o histórico (37,1 contra 36,7 kWh), porque o ritmo de uma semana ainda é ruidoso; nos dias 15 e 22 erra menos que o
+histórico. No dia 15 a regra de três fica um pouco à frente (22,7 contra 23,5). A amostra é pequena (4 meses).
 """)
 
 py("""
@@ -333,14 +340,16 @@ md("""
 - O rateio reproduz exatamente o exemplo da Sprint 01 e a soma das faturas bate com as sessões faturadas.
 - A IA participa do fluxo de cobrança: sessões anômalas ficam fora da fatura até a decisão do gestor. As regras
   cobrem os casos conhecidos e o Isolation Forest cobre o padrão que não tem regra (cabo/carregador degradado).
-- A previsão de demanda erra menos que a média histórica no total semanal e é ela que indica quando um segundo ponto
-  de recarga passa a ser necessário.
-- A projeção da fatura usa a mistura entre o ritmo do mês e o histórico, escolhida pelo backtest acima. No começo do
-  mês o erro ainda é grande, por isso a tela do morador apresenta o valor como estimativa.
+- A previsão de demanda erra um pouco mais que a média histórica por hora, mas menos no total semanal, que é o que
+  indica quando um segundo ponto de recarga passa a ser necessário.
+- A projeção da fatura usa a mistura entre o ritmo do mês e o histórico, que teve o menor erro geral no backtest
+  acima. No dia 8 ela não supera o histórico e o erro ainda é grande, por isso a tela do morador apresenta o valor como
+  estimativa.
 
 **Limitações:** todos os dados são simulados. Com dados reais do HCA G2 os modelos precisam ser retreinados e o corte
-de 97% recalibrado. O gabarito de anomalias existe só porque o simulador as injeta. Em produção, a avaliação viria das
-decisões do gestor (liberar ou descartar), que já ficam registradas como eventos de revisão.
+de 97% recalibrado. O gabarito de anomalias existe só porque o simulador as injeta. Em produção, a precisão real vem
+das decisões do gestor (descartar, liberar com crédito ou liberar sem ajuste), que já ficam registradas como eventos
+de revisão: são os rótulos para medir quantas retenções eram mesmo problema e recalibrar o corte.
 """)
 
 nb = nbf.v4.new_notebook()
